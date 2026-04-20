@@ -1,0 +1,14 @@
+{
+  "key.categories.clientdronecam": "Client Drone Cam",
+  "key.clientdronecam.open_setup": "Open Drone Setup",
+  "screen.clientdronecam.setup": "Drone Setup",
+  "screen.clientdronecam.controller": "Controller",
+  "screen.clientdronecam.bindings": "Buttons",
+  "screen.clientdronecam.axes": "Axes",
+  "screen.clientdronecam.left_stick": "Left Stick",
+  "screen.clientdronecam.right_stick": "Right Stick",
+  "screen.clientdronecam.deadzone": "Deadzone",
+  "screen.clientdronecam.done": "Done",
+  "screen.clientdronecam.capture_button": "Press a button, flip a switch, or Esc to cancel",
+  "screen.clientdronecam.capture_axis": "Move a controller axis or Esc to cancel"
+}
