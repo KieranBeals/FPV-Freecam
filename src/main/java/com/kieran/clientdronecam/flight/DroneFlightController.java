@@ -19,14 +19,15 @@ public final class DroneFlightController {
     private static final double HALF_BOX_SIZE = 0.175D;
     private static final double TICK_SECONDS = 1.0D / 20.0D;
     private static final double GRAVITY = 18.0D;
-    private static final double THRUST_FORCE = 34.0D;
-    private static final double LINEAR_DAMPING = 0.985D;
-    private static final double HORIZONTAL_DAMPING = 0.99D;
-    private static final double MAX_SPEED = 20.0D;
+    private static final double THRUST_FORCE = 26.0D;
+    private static final double LINEAR_DAMPING = 0.94D;
+    private static final double HORIZONTAL_DAMPING = 0.955D;
+    private static final double MAX_SPEED = 8.5D;
     private static final float INPUT_SMOOTHING = 0.22F;
-    private static final float PITCH_RATE = 165.0F;
-    private static final float ROLL_RATE = 185.0F;
-    private static final float YAW_RATE = 125.0F;
+    private static final float RATE_CENTER_SENSITIVITY = 200.0F;
+    private static final float RATE_MAX = 670.0F;
+    private static final float RATE_EXPO = 0.57F;
+    private static final double THROTTLE_IDLE = 0.10D;
 
     private final DroneConfig config;
     private final DroneInputMapper inputMapper;
@@ -135,9 +136,9 @@ public final class DroneFlightController {
         this.state.setFilteredPitch(filteredPitch);
         this.state.setFilteredRoll(filteredRoll);
 
-        final float pitchRate = -filteredPitch * PITCH_RATE;
-        final float rollRate = filteredRoll * ROLL_RATE;
-        final float yawRate = filteredYaw * YAW_RATE;
+        final float pitchRate = -actualRate(filteredPitch, RATE_CENTER_SENSITIVITY, RATE_MAX, RATE_EXPO);
+        final float rollRate = actualRate(filteredRoll, RATE_CENTER_SENSITIVITY, RATE_MAX, RATE_EXPO);
+        final float yawRate = actualRate(filteredYaw, RATE_CENTER_SENSITIVITY, RATE_MAX, RATE_EXPO);
 
         this.state.setPitchVelocity(pitchRate);
         this.state.setRollVelocity(rollRate);
@@ -150,7 +151,7 @@ public final class DroneFlightController {
 
     private void applyMovement(final Entity player, final Level level, final DroneInputMapper.PollResult pollResult) {
         final Vec3 craftUp = droneUpVector(this.state.yaw(), this.state.pitch(), this.state.roll());
-        final double throttle = (this.state.filteredThrottle() + 1.0D) * 0.5D;
+        final double throttle = THROTTLE_IDLE + ((this.state.filteredThrottle() + 1.0D) * 0.5D) * (1.0D - THROTTLE_IDLE);
         final Vec3 acceleration = craftUp.scale(throttle * THRUST_FORCE).add(0.0D, -GRAVITY, 0.0D);
 
         Vec3 velocity = this.state.velocity().add(acceleration.scale(TICK_SECONDS));
@@ -190,6 +191,19 @@ public final class DroneFlightController {
 
     private static float wrapAngle(final float angle) {
         return Mth.wrapDegrees(angle);
+    }
+
+    private static float actualRate(final float input, final float centerSensitivity, final float maxRate, final float expo) {
+        final float magnitude = Math.abs(input);
+        final float shaped = centerSensitivity * magnitude
+                + (maxRate - centerSensitivity) * blendCurve(magnitude, expo);
+        return Math.copySign(shaped, input);
+    }
+
+    private static float blendCurve(final float x, final float expo) {
+        final float squared = x * x;
+        final float cubed = squared * x;
+        return (1.0F - expo) * squared + expo * cubed;
     }
 
     private static boolean hasLoadedTerrain(final Level level, final AABB box) {
