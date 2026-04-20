@@ -25,10 +25,18 @@ public abstract class CameraMixin {
 
     @Inject(
             method = "update(Lnet/minecraft/client/DeltaTracker;)V",
-            at = @At("RETURN")
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/Camera;getViewRotationMatrix(Lorg/joml/Matrix4f;)Lorg/joml/Matrix4f;"
+            )
     )
-    private void clientdronecam$setDetachedPosition(final DeltaTracker deltaTracker, final CallbackInfo ci) {
+    private void clientdronecam$applyDroneCameraBeforeFrustum(final DeltaTracker deltaTracker, final CallbackInfo ci) {
+        // Must run before frustum setup: culling uses the matrix/frustum prepared during Camera.update.
         final Minecraft minecraft = Minecraft.getInstance();
+        this.clientdronecam$applyDroneCamera(minecraft);
+    }
+
+    private void clientdronecam$applyDroneCamera(final Minecraft minecraft) {
         if (ClientDroneCam.LIFECYCLE != null) {
             ClientDroneCam.LIFECYCLE.onFrameUpdate(minecraft);
         }

@@ -21,15 +21,22 @@ public final class DroneFlightController {
     private static final double HALF_BOX_SIZE = 0.175D;
     private static final double TICK_SECONDS = 1.0D / 20.0D;
     private static final double MAX_FRAME_SECONDS = 1.0D / 20.0D;
-    private static final double GRAVITY = 18.0D;
-    private static final double THRUST_FORCE = 75.0D;
-    private static final double LINEAR_DAMPING = 0.94D;
+    // Approximate physical gravity (blocks/s²), with throttle centered for hover.
+    private static final double GRAVITY = 9.8D;
+    private static final double IDLE_THROTTLE = 0.10D;
+    private static final double HOVER_ZONE_START = 0.40D;
+    private static final double HOVER_ZONE_END = 0.60D;
+    private static final double HOVER_THRUST = 0.95D * GRAVITY;
+    private static final double MIN_HOVER_THRUST = 0.95D * GRAVITY;
+    private static final double MAX_HOVER_THRUST = 1.05D * GRAVITY;
+    private static final double MAX_UP_THRUST = 4.5D * GRAVITY;
+    private static final double LINEAR_DAMPING = 0.995D;
     private static final double HORIZONTAL_DAMPING = 0.955D;
     private static final float INPUT_SMOOTHING = 0.22F;
     private static final float RATE_CENTER_SENSITIVITY = 200.0F;
     private static final float RATE_MAX = 670.0F;
     private static final float RATE_EXPO = 0.57F;
-    private static final double THROTTLE_IDLE = 0.10D;
+    private static final double THROTTLE_IDLE = 0.0D;
 
     private final DroneConfig config;
     private final DroneInputMapper inputMapper;
@@ -195,8 +202,9 @@ public final class DroneFlightController {
 
     private void applyMovement(final Entity player, final Level level, final double frameSeconds) {
         final Vec3 craftUp = this.state.upVector();
-        final double throttle = THROTTLE_IDLE + ((this.state.filteredThrottle() + 1.0D) * 0.5D) * (1.0D - THROTTLE_IDLE);
-        final Vec3 acceleration = craftUp.scale(throttle * THRUST_FORCE).add(0.0D, -GRAVITY, 0.0D);
+        final double throttle = (this.state.filteredThrottle() + 1.0D) * 0.5D;
+        final double thrust = this.thrustByThrottle(throttle);
+        final Vec3 acceleration = craftUp.scale(thrust).add(0.0D, -GRAVITY, 0.0D);
 
         Vec3 velocity = this.state.velocity().add(acceleration.scale(frameSeconds));
         final double horizontalDamping = Math.pow(HORIZONTAL_DAMPING, frameSeconds / TICK_SECONDS);
@@ -261,6 +269,32 @@ public final class DroneFlightController {
         final float shaped = centerSensitivity * magnitude
                 + (maxRate - centerSensitivity) * blendCurve(magnitude, expo);
         return Math.copySign(shaped, input);
+    }
+
+    private static double thrustByThrottle(final double throttle) {
+        if (throttle <= 0.0D) {
+            return 0.0D;
+        }
+        if (throttle < IDLE_THROTTLE) {
+            return 0.0D;
+        }
+        if (throttle < HOVER_ZONE_START) {
+            final double normalized = (throttle - IDLE_THROTTLE) / (HOVER_ZONE_START - IDLE_THROTTLE);
+            return smoothStep(0.0D, 1.0D, normalized) * MIN_HOVER_THRUST;
+        }
+        if (throttle < HOVER_ZONE_END) {
+            final double normalized = (throttle - HOVER_ZONE_START) / (HOVER_ZONE_END - HOVER_ZONE_START);
+            return Mth.lerp(normalized, MIN_HOVER_THRUST, MAX_HOVER_THRUST);
+        }
+
+        final double normalized = Mth.clamp((throttle - HOVER_ZONE_END) / (1.0D - HOVER_ZONE_END), 0.0D, 1.0D);
+        final double clampedNorm = smoothStep(0.0D, 1.0D, normalized);
+        return Mth.lerp(clampedNorm, MAX_HOVER_THRUST, MAX_UP_THRUST);
+    }
+
+    private static double smoothStep(final double edge0, final double edge1, final double x) {
+        final double t = Mth.clamp((x - edge0) / (edge1 - edge0), 0.0D, 1.0D);
+        return t * t * (3.0D - 2.0D * t);
     }
 
     private static float blendCurve(final float x, final float expo) {
