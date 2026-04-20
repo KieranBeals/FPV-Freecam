@@ -29,7 +29,7 @@ public abstract class CameraMixin {
             return;
         }
 
-        final Vec3 dronePosition = ClientDroneCam.FLIGHT_CONTROLLER.getRenderCameraPosition();
+        final Vec3 dronePosition = ClientDroneCam.FLIGHT_CONTROLLER.getRenderCameraPosition(1.0F);
         if (dronePosition == null) {
             this.setPosition(x, y, z);
             return;

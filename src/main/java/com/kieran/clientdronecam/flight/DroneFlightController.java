@@ -20,13 +20,11 @@ import java.util.List;
 public final class DroneFlightController {
     private static final double HALF_BOX_SIZE = 0.175D;
     private static final double TICK_SECONDS = 1.0D / 20.0D;
-    private static final double MIN_FRAME_SECONDS = 1.0D / 240.0D;
     private static final double MAX_FRAME_SECONDS = 1.0D / 20.0D;
     private static final double GRAVITY = 18.0D;
-    private static final double THRUST_FORCE = 26.0D;
+    private static final double THRUST_FORCE = 75.0D;
     private static final double LINEAR_DAMPING = 0.94D;
     private static final double HORIZONTAL_DAMPING = 0.955D;
-    private static final double MAX_SPEED = 8.5D;
     private static final float INPUT_SMOOTHING = 0.22F;
     private static final float RATE_CENTER_SENSITIVITY = 200.0F;
     private static final float RATE_MAX = 670.0F;
@@ -94,6 +92,10 @@ public final class DroneFlightController {
             return;
         }
 
+        if (frameSeconds <= 0.0D) {
+            return;
+        }
+
         this.applyRotation(pollResult, frameSeconds);
         this.applyMovement(player, level, frameSeconds);
     }
@@ -118,12 +120,12 @@ public final class DroneFlightController {
         return this.state.controllerName();
     }
 
-    public @Nullable Vec3 getRenderCameraPosition() {
+    public @Nullable Vec3 getRenderCameraPosition(final float partialTick) {
         if (!this.state.isActive()) {
             return null;
         }
 
-        return this.state.position();
+        return this.state.renderPosition(partialTick);
     }
 
     public void forceDeactivate(final String reason) {
@@ -196,10 +198,6 @@ public final class DroneFlightController {
         final double horizontalDamping = Math.pow(HORIZONTAL_DAMPING, frameSeconds / TICK_SECONDS);
         final double verticalDamping = Math.pow(LINEAR_DAMPING, frameSeconds / TICK_SECONDS);
         velocity = new Vec3(velocity.x * horizontalDamping, velocity.y * verticalDamping, velocity.z * horizontalDamping);
-        if (velocity.lengthSqr() > MAX_SPEED * MAX_SPEED) {
-            velocity = velocity.normalize().scale(MAX_SPEED);
-        }
-
         final Vec3 attemptedMove = velocity.scale(frameSeconds);
         final AABB currentBox = cameraBox(this.state.position());
         final AABB movedBox = currentBox.move(attemptedMove);
@@ -225,12 +223,12 @@ public final class DroneFlightController {
         final long now = System.nanoTime();
         if (this.lastFrameTimeNanos < 0L) {
             this.lastFrameTimeNanos = now;
-            return TICK_SECONDS;
+            return 0.0D;
         }
 
         final double rawSeconds = (now - this.lastFrameTimeNanos) / 1_000_000_000.0D;
         this.lastFrameTimeNanos = now;
-        return Mth.clamp(rawSeconds, MIN_FRAME_SECONDS, MAX_FRAME_SECONDS);
+        return Mth.clamp(rawSeconds, 0.0D, MAX_FRAME_SECONDS);
     }
 
     private void resetFrameTimer() {

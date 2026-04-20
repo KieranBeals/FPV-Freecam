@@ -15,6 +15,7 @@ public final class ClientDroneCamClientEvents {
 
     public static void onClientTickPost(final ClientTickEvent.Post event) {
         final Minecraft minecraft = Minecraft.getInstance();
+        ClientDroneCam.FLIGHT_CONTROLLER.tick(minecraft);
 
         while (ClientDroneCam.OPEN_SETUP_KEY.consumeClick()) {
             minecraft.setScreen(new DroneSetupScreen(minecraft.screen));
