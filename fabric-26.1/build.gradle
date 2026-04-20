@@ -1,0 +1,64 @@
+plugins {
+    id 'java-library'
+    id 'net.fabricmc.fabric-loom-remap' version "${fabric_loom_version}"
+}
+
+base {
+    archivesName = "${project.mod_id}-fabric-${project.fabric_minecraft_version}"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(project.fabric_java_version as int)
+    withSourcesJar()
+}
+
+sourceSets {
+    main {
+        java.srcDir project(':common').file('src/main/java')
+        resources {
+            srcDir project(':common').file('src/main/resources')
+            exclude 'pack.mcmeta'
+        }
+    }
+}
+
+loom {
+    runConfigs.configureEach {
+        ideConfigGenerated = true
+        runDir = "../runs/${it.name}"
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.fabric_minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.fabric_yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+    compileOnly "org.spongepowered:mixin:0.8.5"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = project.fabric_java_version as int
+}
+
+processResources {
+    def expandProps = [
+            version               : project.version,
+            mod_id                : project.mod_id,
+            mod_name              : project.mod_name,
+            mod_authors           : project.mod_authors,
+            mod_description       : project.mod_description,
+            mod_license           : project.mod_license,
+            minecraft_version     : project.fabric_minecraft_version,
+            fabric_loader_version : project.fabric_loader_version,
+            fabric_api_version    : project.fabric_api_version
+    ]
+
+    inputs.properties(expandProps)
+
+    filesMatching(['fabric.mod.json', 'pack.mcmeta']) {
+        expand expandProps
+    }
+}

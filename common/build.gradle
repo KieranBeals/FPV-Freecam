@@ -1,0 +1,32 @@
+plugins {
+    id 'java-library'
+}
+
+base {
+    archivesName = "${project.mod_id}-common"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+    withSourcesJar()
+}
+
+tasks.named('compileJava').configure {
+    enabled = false
+}
+
+tasks.named('processResources').configure {
+    enabled = false
+}
+
+tasks.named('classes').configure {
+    enabled = false
+}
+
+tasks.named('jar').configure {
+    enabled = false
+}
+
+tasks.named('sourcesJar').configure {
+    enabled = false
+}
