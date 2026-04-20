@@ -81,7 +81,7 @@ public final class DroneFlightController {
         if (!this.state.isActive()) {
             if (pollResult.connected() && pollResult.togglePressed() && minecraft.screen == null) {
                 final String controllerName = pollResult.controller() == null ? "" : pollResult.controller().displayName();
-                this.state.activate(player.getEyePosition(), player.getYRot(), player.getXRot(), player.level().dimension(), controllerName);
+                this.state.activate(player.getEyePosition(), player.getYRot(), 0.0F, player.level().dimension(), controllerName);
                 this.resetFrameTimer();
             }
             return;

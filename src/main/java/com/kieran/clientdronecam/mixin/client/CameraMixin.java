@@ -9,6 +9,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Camera.class)
 public abstract class CameraMixin {
@@ -36,5 +38,13 @@ public abstract class CameraMixin {
         }
 
         this.setPosition(dronePosition.x, dronePosition.y, dronePosition.z);
+    }
+
+    @Inject(method = "isDetached()Z", at = @At("HEAD"), cancellable = true)
+    private void clientdronecam$detachDroneCamera(final CallbackInfoReturnable<Boolean> cir) {
+        final Minecraft minecraft = Minecraft.getInstance();
+        if (ClientDroneCam.FLIGHT_CONTROLLER != null && ClientDroneCam.FLIGHT_CONTROLLER.isActive() && this.entity == minecraft.player) {
+            cir.setReturnValue(true);
+        }
     }
 }
