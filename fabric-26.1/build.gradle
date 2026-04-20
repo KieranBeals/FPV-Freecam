@@ -1,6 +1,6 @@
 plugins {
     id 'java-library'
-    id 'net.fabricmc.fabric-loom-remap' version "${fabric_loom_version}"
+    id 'net.fabricmc.fabric-loom' version "${fabric_loom_version}"
 }
 
 base {
@@ -23,6 +23,12 @@ sourceSets {
 }
 
 loom {
+    mods {
+        "${project.mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+
     runConfigs.configureEach {
         ideConfigGenerated = true
         runDir = "../runs/${it.name}"
@@ -31,9 +37,9 @@ loom {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.fabric_minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.fabric_yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    implementation "com.terraformersmc:modmenu:${project.modmenu_version}"
 
     compileOnly "org.spongepowered:mixin:0.8.5"
 }

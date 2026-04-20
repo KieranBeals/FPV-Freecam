@@ -10,13 +10,14 @@ allprojects {
         mavenCentral()
         maven { url = 'https://maven.fabricmc.net/' }
         maven { url = 'https://maven.neoforged.net/releases' }
+        maven { url = 'https://maven.terraformersmc.com/releases/' }
     }
 }
 
 tasks.register('runFabricClient') {
     group = 'run'
-    description = 'Runs the Fabric 1.21.1 client.'
-    dependsOn(':fabric-1.21.1:runClient')
+    description = 'Runs the Fabric 26.1 client.'
+    dependsOn(':fabric-26.1:runClient')
 }
 
 tasks.register('runNeoForgeClient') {

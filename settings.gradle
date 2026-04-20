@@ -11,6 +11,4 @@ rootProject.name = "client-drone-cam"
 
 include("common")
 include("neoforge-1.21.1")
-include("fabric-1.21.1")
-
-project(":fabric-1.21.1").projectDir = file("fabric-26.1")
+include("fabric-26.1")
