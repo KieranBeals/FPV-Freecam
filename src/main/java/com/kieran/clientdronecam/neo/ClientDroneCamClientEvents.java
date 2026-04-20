@@ -19,18 +19,17 @@ public final class ClientDroneCamClientEvents {
         while (ClientDroneCam.OPEN_SETUP_KEY.consumeClick()) {
             minecraft.setScreen(new DroneSetupScreen(minecraft.screen));
         }
-
-        ClientDroneCam.FLIGHT_CONTROLLER.tick(minecraft);
     }
 
     public static void onComputeCameraAngles(final ViewportEvent.ComputeCameraAngles event) {
-        if (!ClientDroneCam.FLIGHT_CONTROLLER.isActive()) {
-            return;
-        }
+        final Minecraft minecraft = Minecraft.getInstance();
+        ClientDroneCam.FLIGHT_CONTROLLER.updateFrame(minecraft);
 
-        event.setYaw(ClientDroneCam.FLIGHT_CONTROLLER.getCameraYaw());
-        event.setPitch(ClientDroneCam.FLIGHT_CONTROLLER.getCameraPitch());
-        event.setRoll(ClientDroneCam.FLIGHT_CONTROLLER.getCameraRoll());
+        if (ClientDroneCam.FLIGHT_CONTROLLER.isActive()) {
+            event.setYaw(ClientDroneCam.FLIGHT_CONTROLLER.getCameraYaw());
+            event.setPitch(ClientDroneCam.FLIGHT_CONTROLLER.getCameraPitch());
+            event.setRoll(ClientDroneCam.FLIGHT_CONTROLLER.getCameraRoll());
+        }
     }
 
     public static void onRenderGuiPost(final RenderGuiEvent.Post event) {

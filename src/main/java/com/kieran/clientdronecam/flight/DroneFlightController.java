@@ -18,6 +18,8 @@ import java.util.List;
 public final class DroneFlightController {
     private static final double HALF_BOX_SIZE = 0.175D;
     private static final double TICK_SECONDS = 1.0D / 20.0D;
+    private static final double MIN_FRAME_SECONDS = 1.0D / 240.0D;
+    private static final double MAX_FRAME_SECONDS = 1.0D / 20.0D;
     private static final double GRAVITY = 18.0D;
     private static final double THRUST_FORCE = 26.0D;
     private static final double LINEAR_DAMPING = 0.94D;
@@ -32,6 +34,7 @@ public final class DroneFlightController {
     private final DroneConfig config;
     private final DroneInputMapper inputMapper;
     private final DroneCameraState state = new DroneCameraState();
+    private long lastFrameTimeNanos = -1L;
 
     public DroneFlightController(final DroneConfig config, final DroneInputMapper inputMapper) {
         this.config = config;
@@ -39,6 +42,10 @@ public final class DroneFlightController {
     }
 
     public void tick(final Minecraft minecraft) {
+        this.handleSetupAndActivation(minecraft);
+    }
+
+    public void updateFrame(final Minecraft minecraft) {
         final var player = minecraft.player;
         final var level = minecraft.level;
         if (player == null || level == null) {
@@ -48,6 +55,9 @@ public final class DroneFlightController {
             return;
         }
 
+        this.handleSetupAndActivation(minecraft);
+
+        final double frameSeconds = this.consumeFrameSeconds();
         final DroneInputMapper.PollResult pollResult = this.inputMapper.poll(this.config, this.state);
         if (this.state.isActive() && !pollResult.connected()) {
             this.forceDeactivate("controller_disconnect");
@@ -72,6 +82,7 @@ public final class DroneFlightController {
             if (pollResult.connected() && pollResult.togglePressed() && minecraft.screen == null) {
                 final String controllerName = pollResult.controller() == null ? "" : pollResult.controller().displayName();
                 this.state.activate(player.getEyePosition(), player.getYRot(), player.getXRot(), player.level().dimension(), controllerName);
+                this.resetFrameTimer();
             }
             return;
         }
@@ -81,8 +92,8 @@ public final class DroneFlightController {
             return;
         }
 
-        this.applyRotation(pollResult);
-        this.applyMovement(player, level, pollResult);
+        this.applyRotation(pollResult, frameSeconds);
+        this.applyMovement(player, level, frameSeconds);
     }
 
     public boolean isActive() {
@@ -110,11 +121,18 @@ public final class DroneFlightController {
             return null;
         }
 
-        return this.state.renderPosition(Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true));
+        return this.state.position();
     }
 
     public void forceDeactivate(final String reason) {
         this.state.deactivate();
+        this.resetFrameTimer();
+    }
+
+    private void handleSetupAndActivation(final Minecraft minecraft) {
+        if (!this.state.isActive()) {
+            this.resetFrameTimer();
+        }
     }
 
     private boolean shouldForceStop(final Level level, final boolean deadOrDying) {
@@ -125,7 +143,7 @@ public final class DroneFlightController {
         return !this.state.dimension().equals(level.dimension());
     }
 
-    private void applyRotation(final DroneInputMapper.PollResult pollResult) {
+    private void applyRotation(final DroneInputMapper.PollResult pollResult, final double frameSeconds) {
         final float filteredThrottle = smooth(this.state.filteredThrottle(), pollResult.throttle(), INPUT_SMOOTHING);
         final float filteredYaw = smooth(this.state.filteredYaw(), pollResult.yaw(), INPUT_SMOOTHING);
         final float filteredPitch = smooth(this.state.filteredPitch(), pollResult.pitch(), INPUT_SMOOTHING);
@@ -144,27 +162,25 @@ public final class DroneFlightController {
         this.state.setRollVelocity(rollRate);
         this.state.setYawVelocity(yawRate);
 
-        this.state.setPitch(wrapAngle(this.state.pitch() + pitchRate * (float) TICK_SECONDS));
-        this.state.setRoll(wrapAngle(this.state.roll() + rollRate * (float) TICK_SECONDS));
-        this.state.setYaw(wrapAngle(this.state.yaw() + yawRate * (float) TICK_SECONDS));
+        this.state.setPitch(wrapAngle(this.state.pitch() + pitchRate * (float) frameSeconds));
+        this.state.setRoll(wrapAngle(this.state.roll() + rollRate * (float) frameSeconds));
+        this.state.setYaw(wrapAngle(this.state.yaw() + yawRate * (float) frameSeconds));
     }
 
-    private void applyMovement(final Entity player, final Level level, final DroneInputMapper.PollResult pollResult) {
+    private void applyMovement(final Entity player, final Level level, final double frameSeconds) {
         final Vec3 craftUp = droneUpVector(this.state.yaw(), this.state.pitch(), this.state.roll());
         final double throttle = THROTTLE_IDLE + ((this.state.filteredThrottle() + 1.0D) * 0.5D) * (1.0D - THROTTLE_IDLE);
         final Vec3 acceleration = craftUp.scale(throttle * THRUST_FORCE).add(0.0D, -GRAVITY, 0.0D);
 
-        Vec3 velocity = this.state.velocity().add(acceleration.scale(TICK_SECONDS));
-        velocity = new Vec3(
-                velocity.x * HORIZONTAL_DAMPING,
-                velocity.y * LINEAR_DAMPING,
-                velocity.z * HORIZONTAL_DAMPING
-        );
+        Vec3 velocity = this.state.velocity().add(acceleration.scale(frameSeconds));
+        final double horizontalDamping = Math.pow(HORIZONTAL_DAMPING, frameSeconds / TICK_SECONDS);
+        final double verticalDamping = Math.pow(LINEAR_DAMPING, frameSeconds / TICK_SECONDS);
+        velocity = new Vec3(velocity.x * horizontalDamping, velocity.y * verticalDamping, velocity.z * horizontalDamping);
         if (velocity.lengthSqr() > MAX_SPEED * MAX_SPEED) {
             velocity = velocity.normalize().scale(MAX_SPEED);
         }
 
-        final Vec3 attemptedMove = velocity;
+        final Vec3 attemptedMove = velocity.scale(frameSeconds);
         final AABB currentBox = cameraBox(this.state.position());
         final AABB movedBox = currentBox.move(attemptedMove);
         if (!hasLoadedTerrain(level, movedBox)) {
@@ -178,11 +194,27 @@ public final class DroneFlightController {
         this.state.setPosition(nextPosition);
 
         velocity = new Vec3(
-                attemptedMove.x != allowedMove.x ? 0.0D : velocity.x,
-                attemptedMove.y != allowedMove.y ? 0.0D : velocity.y,
-                attemptedMove.z != allowedMove.z ? 0.0D : velocity.z
+                Math.abs(attemptedMove.x - allowedMove.x) > 1.0E-7D ? 0.0D : velocity.x,
+                Math.abs(attemptedMove.y - allowedMove.y) > 1.0E-7D ? 0.0D : velocity.y,
+                Math.abs(attemptedMove.z - allowedMove.z) > 1.0E-7D ? 0.0D : velocity.z
         );
         this.state.setVelocity(velocity);
+    }
+
+    private double consumeFrameSeconds() {
+        final long now = System.nanoTime();
+        if (this.lastFrameTimeNanos < 0L) {
+            this.lastFrameTimeNanos = now;
+            return TICK_SECONDS;
+        }
+
+        final double rawSeconds = (now - this.lastFrameTimeNanos) / 1_000_000_000.0D;
+        this.lastFrameTimeNanos = now;
+        return Mth.clamp(rawSeconds, MIN_FRAME_SECONDS, MAX_FRAME_SECONDS);
+    }
+
+    private void resetFrameTimer() {
+        this.lastFrameTimeNanos = -1L;
     }
 
     private static float smooth(final float current, final float target, final float factor) {
