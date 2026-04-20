@@ -2,8 +2,12 @@ package com.kieran.clientdronecam.flight;
 
 import com.kieran.clientdronecam.input.DroneInputMapper;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix3f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWGamepadState;
@@ -13,14 +17,18 @@ import java.nio.FloatBuffer;
 
 public final class DroneCameraState {
     private static final int MAX_TRACKED_BUTTONS = 256;
+    private static final Vec3 WORLD_UP = new Vec3(0.0D, 1.0D, 0.0D);
+    private static final Vec3 LOCAL_FORWARD = new Vec3(0.0D, 0.0D, 1.0D);
+    private static final Vec3 LOCAL_UP = new Vec3(0.0D, 1.0D, 0.0D);
+    private static final Vec3 LOCAL_RIGHT = new Vec3(-1.0D, 0.0D, 0.0D);
+    private static final double MIN_HORIZONTAL_LENGTH_SQUARED = 1.0E-8D;
+    private static final double MIN_REFERENCE_LENGTH_SQUARED = 1.0E-8D;
 
     private boolean active;
     private Vec3 position = Vec3.ZERO;
     private Vec3 previousPosition = Vec3.ZERO;
     private Vec3 velocity = Vec3.ZERO;
-    private float yaw;
-    private float pitch;
-    private float roll;
+    private final Quaternionf orientation = new Quaternionf();
     private float yawVelocity;
     private float pitchVelocity;
     private float rollVelocity;
@@ -31,6 +39,8 @@ public final class DroneCameraState {
     private @Nullable ResourceKey<Level> dimension;
     private String controllerName = "";
     private boolean escapeDown;
+    private float lastCameraYaw;
+    private float lastCameraRoll;
     private final boolean[] previousButtons = new boolean[MAX_TRACKED_BUTTONS];
 
     public boolean isActive() {
@@ -42,9 +52,7 @@ public final class DroneCameraState {
         this.position = eyePosition;
         this.previousPosition = eyePosition;
         this.velocity = Vec3.ZERO;
-        this.yaw = yaw;
-        this.pitch = 0.0F;
-        this.roll = 0.0F;
+        this.setOrientationFromView(yaw, pitch);
         this.yawVelocity = 0.0F;
         this.pitchVelocity = 0.0F;
         this.rollVelocity = 0.0F;
@@ -62,9 +70,9 @@ public final class DroneCameraState {
         this.position = Vec3.ZERO;
         this.previousPosition = Vec3.ZERO;
         this.velocity = Vec3.ZERO;
+        this.orientation.identity();
         this.dimension = null;
         this.controllerName = "";
-        this.roll = 0.0F;
         this.yawVelocity = 0.0F;
         this.pitchVelocity = 0.0F;
         this.rollVelocity = 0.0F;
@@ -73,6 +81,8 @@ public final class DroneCameraState {
         this.filteredPitch = 0.0F;
         this.filteredRoll = 0.0F;
         this.escapeDown = false;
+        this.lastCameraYaw = 0.0F;
+        this.lastCameraRoll = 0.0F;
         this.clearButtons();
     }
 
@@ -97,32 +107,56 @@ public final class DroneCameraState {
         this.velocity = velocity;
     }
 
-    public float yaw() {
-        return this.yaw;
+    public void setOrientationFromView(final float initialYaw, final float initialPitch) {
+        final double yawRadians = Math.toRadians(initialYaw);
+        final double pitchRadians = Math.toRadians(initialPitch);
+        final double cosPitch = Math.cos(pitchRadians);
+
+        final Vec3 forward = new Vec3(
+                -Math.sin(yawRadians) * cosPitch,
+                -Math.sin(pitchRadians),
+                Math.cos(yawRadians) * cosPitch
+        ).normalize();
+
+        Vec3 right = forward.cross(WORLD_UP);
+        if (right.lengthSqr() < MIN_HORIZONTAL_LENGTH_SQUARED) {
+            right = new Vec3(-Math.cos(yawRadians), 0.0D, -Math.sin(yawRadians));
+        }
+        right = right.normalize();
+        final Vec3 up = right.cross(forward).normalize();
+
+        final Matrix3f basis = new Matrix3f().set(
+                (float) right.x, (float) up.x, (float) forward.x,
+                (float) right.y, (float) up.y, (float) forward.y,
+                (float) right.z, (float) up.z, (float) forward.z
+        );
+        this.orientation.setFromNormalized(basis).normalize();
+        this.lastCameraYaw = Mth.wrapDegrees(initialYaw);
+        this.lastCameraRoll = 0.0F;
     }
 
-    public void setYaw(final float yaw) {
-        this.yaw = yaw;
+    public Quaternionf orientation() {
+        return new Quaternionf(this.orientation);
     }
 
-    public float pitch() {
-        return this.pitch;
+    public void setOrientation(final Quaternionf orientation) {
+        this.orientation.set(orientation).normalize();
     }
 
-    public void setPitch(final float pitch) {
-        this.pitch = pitch;
+    public Vec3 forwardVector() {
+        return transformAxis(LOCAL_FORWARD, this.orientation);
     }
 
     public @Nullable ResourceKey<Level> dimension() {
         return this.dimension;
     }
 
-    public float roll() {
-        return this.roll;
+    public Vec3 rightVector() {
+        return transformAxis(LOCAL_RIGHT, this.orientation);
     }
 
-    public void setRoll(final float roll) {
-        this.roll = roll;
+    public Vec3 upVector() {
+        return transformAxis(LOCAL_UP, this.orientation);
     }
 
     public float filteredThrottle() {
@@ -203,6 +237,37 @@ public final class DroneCameraState {
         }
     }
 
+    public float cameraYaw() {
+        final Vec3 forward = this.forwardVector();
+        final double horizontalLengthSquared = forward.x * forward.x + forward.z * forward.z;
+        if (horizontalLengthSquared >= MIN_HORIZONTAL_LENGTH_SQUARED) {
+            this.lastCameraYaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(-forward.x, forward.z)));
+        }
+        return this.lastCameraYaw;
+    }
+
+    public float cameraPitch() {
+        final Vec3 forward = this.forwardVector();
+        final double clampedY = Mth.clamp(-forward.y, -1.0D, 1.0D);
+        return Mth.wrapDegrees((float) Math.toDegrees(Math.asin(clampedY)));
+    }
+
+    public float cameraRoll() {
+        final Vec3 forward = this.forwardVector();
+        final Vec3 up = this.upVector();
+        final Vec3 projectedWorldUp = WORLD_UP.subtract(forward.scale(WORLD_UP.dot(forward)));
+        final Vec3 projectedUp = up.subtract(forward.scale(up.dot(forward)));
+        if (projectedWorldUp.lengthSqr() >= MIN_REFERENCE_LENGTH_SQUARED
+                && projectedUp.lengthSqr() >= MIN_REFERENCE_LENGTH_SQUARED) {
+            final Vec3 referenceUp = projectedWorldUp.normalize();
+            final Vec3 currentUp = projectedUp.normalize();
+            final double sin = forward.dot(referenceUp.cross(currentUp));
+            final double cos = currentUp.dot(referenceUp);
+            this.lastCameraRoll = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(sin, cos)));
+        }
+        return this.lastCameraRoll;
+    }
+
     public void captureButtons(final GLFWGamepadState gamepadState) {
         for (int button = 0; button < this.previousButtons.length; button++) {
             final boolean buttonPressed = button <= GLFW.GLFW_GAMEPAD_BUTTON_LAST
@@ -221,5 +286,11 @@ public final class DroneCameraState {
             final boolean axisPressed = DroneInputMapper.isAxisButtonPressed(axes, button);
             this.previousButtons[button] = buttonPressed || hatPressed || axisPressed;
         }
+    }
+
+    private static Vec3 transformAxis(final Vec3 axis, final Quaternionf orientation) {
+        final Vector3f transformed = new Vector3f((float) axis.x, (float) axis.y, (float) axis.z);
+        orientation.transform(transformed);
+        return new Vec3(transformed.x(), transformed.y(), transformed.z()).normalize();
     }
 }

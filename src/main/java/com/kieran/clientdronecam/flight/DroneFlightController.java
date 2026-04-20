@@ -10,6 +10,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.joml.AxisAngle4f;
+import org.joml.Quaternionf;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
@@ -101,15 +103,15 @@ public final class DroneFlightController {
     }
 
     public float getCameraYaw() {
-        return this.state.yaw();
+        return this.state.cameraYaw();
     }
 
     public float getCameraPitch() {
-        return this.state.pitch();
+        return this.state.cameraPitch();
     }
 
     public float getCameraRoll() {
-        return this.state.roll();
+        return this.state.cameraRoll();
     }
 
     public String getActiveControllerName() {
@@ -162,13 +164,31 @@ public final class DroneFlightController {
         this.state.setRollVelocity(rollRate);
         this.state.setYawVelocity(yawRate);
 
-        this.state.setPitch(wrapAngle(this.state.pitch() + pitchRate * (float) frameSeconds));
-        this.state.setRoll(wrapAngle(this.state.roll() + rollRate * (float) frameSeconds));
-        this.state.setYaw(wrapAngle(this.state.yaw() + yawRate * (float) frameSeconds));
+        final Quaternionf orientation = this.state.orientation();
+        final Vec3 startUp = this.state.upVector();
+        final Vec3 startRight = this.state.rightVector();
+        final Vec3 startForward = this.state.forwardVector();
+
+        final float yawRadians = (float) Math.toRadians(yawRate * frameSeconds);
+        final float pitchRadians = (float) Math.toRadians(pitchRate * frameSeconds);
+        final float rollRadians = (float) Math.toRadians(rollRate * frameSeconds);
+
+        // Apply local-stick rotations against the craft basis sampled at frame start:
+        // 1. yaw around local up
+        // 2. pitch around local right
+        // 3. roll around local forward
+        final Quaternionf yawDelta = axisRotation(startUp, yawRadians);
+        final Quaternionf pitchDelta = axisRotation(startRight, pitchRadians);
+        final Quaternionf rollDelta = axisRotation(startForward, rollRadians);
+
+        orientation.premul(yawDelta);
+        orientation.premul(pitchDelta);
+        orientation.premul(rollDelta);
+        this.state.setOrientation(orientation);
     }
 
     private void applyMovement(final Entity player, final Level level, final double frameSeconds) {
-        final Vec3 craftUp = droneUpVector(this.state.yaw(), this.state.pitch(), this.state.roll());
+        final Vec3 craftUp = this.state.upVector();
         final double throttle = THROTTLE_IDLE + ((this.state.filteredThrottle() + 1.0D) * 0.5D) * (1.0D - THROTTLE_IDLE);
         final Vec3 acceleration = craftUp.scale(throttle * THRUST_FORCE).add(0.0D, -GRAVITY, 0.0D);
 
@@ -221,10 +241,6 @@ public final class DroneFlightController {
         return Mth.lerp(factor, current, target);
     }
 
-    private static float wrapAngle(final float angle) {
-        return Mth.wrapDegrees(angle);
-    }
-
     private static float actualRate(final float input, final float centerSensitivity, final float maxRate, final float expo) {
         final float magnitude = Math.abs(input);
         final float shaped = centerSensitivity * magnitude
@@ -262,31 +278,10 @@ public final class DroneFlightController {
         );
     }
 
-    private static Vec3 droneUpVector(final float yaw, final float pitch, final float roll) {
-        final Vec3 forward = horizontalForward(yaw);
-        final Vec3 right = horizontalRight(yaw);
-        Vec3 up = new Vec3(0.0D, 1.0D, 0.0D);
-
-        up = rotateAroundAxis(up, right, Math.toRadians(-pitch));
-        up = rotateAroundAxis(up, forward, Math.toRadians(roll));
-        return up.normalize();
-    }
-
-    private static Vec3 horizontalForward(final float yaw) {
-        final double yawRadians = Math.toRadians(yaw);
-        return new Vec3(-Math.sin(yawRadians), 0.0D, Math.cos(yawRadians)).normalize();
-    }
-
-    private static Vec3 horizontalRight(final float yaw) {
-        final Vec3 forward = horizontalForward(yaw);
-        return forward.cross(new Vec3(0.0D, 1.0D, 0.0D)).normalize();
-    }
-
-    private static Vec3 rotateAroundAxis(final Vec3 vector, final Vec3 axis, final double angleRadians) {
-        final double cos = Math.cos(angleRadians);
-        final double sin = Math.sin(angleRadians);
-        return vector.scale(cos)
-                .add(axis.cross(vector).scale(sin))
-                .add(axis.scale(axis.dot(vector) * (1.0D - cos)));
+    private static Quaternionf axisRotation(final Vec3 axis, final float angleRadians) {
+        if (Math.abs(angleRadians) < 1.0E-8F) {
+            return new Quaternionf();
+        }
+        return new Quaternionf().set(new AxisAngle4f(angleRadians, (float) axis.x, (float) axis.y, (float) axis.z));
     }
 }
