@@ -5,6 +5,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.joml.AxisAngle4f;
 import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -41,6 +42,7 @@ public final class DroneCameraState {
     private boolean escapeDown;
     private float lastCameraYaw;
     private float lastCameraRoll;
+    private float cameraPitch;
     private final boolean[] previousButtons = new boolean[MAX_TRACKED_BUTTONS];
 
     public boolean isActive() {
@@ -63,6 +65,7 @@ public final class DroneCameraState {
         this.dimension = dimension;
         this.controllerName = controllerName == null ? "" : controllerName;
         this.escapeDown = false;
+        this.cameraPitch = 0.0F;
     }
 
     public void deactivate() {
@@ -83,6 +86,7 @@ public final class DroneCameraState {
         this.escapeDown = false;
         this.lastCameraYaw = 0.0F;
         this.lastCameraRoll = 0.0F;
+        this.cameraPitch = 0.0F;
         this.clearButtons();
     }
 
@@ -141,6 +145,57 @@ public final class DroneCameraState {
 
     public void setOrientation(final Quaternionf orientation) {
         this.orientation.set(orientation).normalize();
+    }
+
+    public void setCameraPitch(final float cameraPitch) {
+        this.cameraPitch = Mth.clamp(cameraPitch, -90.0F, 90.0F);
+    }
+
+    public float cameraPitchOffset() {
+        return this.cameraPitch;
+    }
+
+    public void adjustCameraPitch(final float pitchDeltaDegrees) {
+        this.cameraPitch = Mth.clamp(this.cameraPitch + pitchDeltaDegrees, -90.0F, 90.0F);
+    }
+
+    public Quaternionf cameraOrientation() {
+        final Quaternionf viewOrientation = new Quaternionf(this.orientation);
+        final Vec3 cameraRight = this.rightVector();
+        if (Math.abs(this.cameraPitch) > 1.0E-7F) {
+            final Quaternionf cameraPitchRotation = new Quaternionf().set(new AxisAngle4f(
+                    (float) Math.toRadians(this.cameraPitch),
+                    (float) cameraRight.x,
+                    (float) cameraRight.y,
+                    (float) cameraRight.z
+            ));
+            viewOrientation.premul(cameraPitchRotation);
+        }
+        return viewOrientation.normalize();
+    }
+
+    public float cameraYaw() {
+        return this.cameraAngles(this.cameraOrientation()).yaw();
+    }
+
+    public DroneCameraAngles cameraAngles() {
+        return this.cameraAngles(this.cameraOrientation());
+    }
+
+    public float cameraPitch() {
+        return this.cameraAngles(this.cameraOrientation()).pitch();
+    }
+
+    public float cameraRoll() {
+        return this.cameraAngles(this.cameraOrientation()).roll();
+    }
+
+    public float bodyPitch() {
+        return this.bodyPitchDegrees();
+    }
+
+    public float pitchOffset() {
+        return this.cameraPitch;
     }
 
     public Vec3 forwardVector() {
@@ -237,7 +292,7 @@ public final class DroneCameraState {
         }
     }
 
-    public float cameraYaw() {
+    public float bodyYaw() {
         final Vec3 forward = this.forwardVector();
         final double horizontalLengthSquared = forward.x * forward.x + forward.z * forward.z;
         if (horizontalLengthSquared >= MIN_HORIZONTAL_LENGTH_SQUARED) {
@@ -246,15 +301,30 @@ public final class DroneCameraState {
         return this.lastCameraYaw;
     }
 
-    public float cameraPitch() {
+    private float bodyPitchDegrees() {
         final Vec3 forward = this.forwardVector();
         final double clampedY = Mth.clamp(-forward.y, -1.0D, 1.0D);
         return Mth.wrapDegrees((float) Math.toDegrees(Math.asin(clampedY)));
     }
 
-    public float cameraRoll() {
-        final Vec3 forward = this.forwardVector();
-        final Vec3 up = this.upVector();
+    private float cameraPitch(final Quaternionf orientation) {
+        final Vec3 forward = transformAxis(LOCAL_FORWARD, orientation);
+        final double clampedY = Mth.clamp(-forward.y, -1.0D, 1.0D);
+        return Mth.wrapDegrees((float) Math.toDegrees(Math.asin(clampedY)));
+    }
+
+    private float cameraYaw(final Quaternionf orientation) {
+        final Vec3 forward = transformAxis(LOCAL_FORWARD, orientation);
+        final double horizontalLengthSquared = forward.x * forward.x + forward.z * forward.z;
+        if (horizontalLengthSquared >= MIN_HORIZONTAL_LENGTH_SQUARED) {
+            this.lastCameraYaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(-forward.x, forward.z)));
+        }
+        return this.lastCameraYaw;
+    }
+
+    private float cameraRoll(final Quaternionf orientation) {
+        final Vec3 forward = transformAxis(LOCAL_FORWARD, orientation);
+        final Vec3 up = transformAxis(LOCAL_UP, orientation);
         final Vec3 projectedWorldUp = WORLD_UP.subtract(forward.scale(WORLD_UP.dot(forward)));
         final Vec3 projectedUp = up.subtract(forward.scale(up.dot(forward)));
         if (projectedWorldUp.lengthSqr() >= MIN_REFERENCE_LENGTH_SQUARED
@@ -266,6 +336,14 @@ public final class DroneCameraState {
             this.lastCameraRoll = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(sin, cos)));
         }
         return this.lastCameraRoll;
+    }
+
+    private DroneCameraAngles cameraAngles(final Quaternionf orientation) {
+        return new DroneCameraAngles(
+                this.cameraYaw(orientation),
+                this.cameraPitch(orientation),
+                this.cameraRoll(orientation)
+        );
     }
 
     public void captureButtons(final GLFWGamepadState gamepadState) {

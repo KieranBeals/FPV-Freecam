@@ -28,8 +28,10 @@ public final class ClientLifecycleBridge {
         }
 
         final String controllerName = this.flightController.getActiveControllerName();
+        final int roundedTilt = Math.round(this.flightController.getCameraPitch());
+        final String tiltText = "Tilt: " + roundedTilt + " deg";
         return controllerName == null || controllerName.isBlank()
-                ? "Drone Active"
-                : "Drone Active - " + controllerName;
+                ? "Drone Active | " + tiltText
+                : "Drone Active - " + controllerName + " | " + tiltText;
     }
 }

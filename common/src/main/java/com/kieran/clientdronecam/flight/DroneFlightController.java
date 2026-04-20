@@ -36,6 +36,7 @@ public final class DroneFlightController {
     private static final float RATE_CENTER_SENSITIVITY = 200.0F;
     private static final float RATE_MAX = 670.0F;
     private static final float RATE_EXPO = 0.57F;
+    private static final float KEY_PITCH_RATE_DPS = 45.0F;
     private static final double THROTTLE_IDLE = 0.0D;
 
     private final DroneConfig config;
@@ -88,7 +89,8 @@ public final class DroneFlightController {
         if (!this.state.isActive()) {
             if (pollResult.connected() && pollResult.togglePressed() && minecraft.screen == null) {
                 final String controllerName = pollResult.controller() == null ? "" : pollResult.controller().displayName();
-                this.state.activate(player.getEyePosition(), player.getYRot(), 0.0F, player.level().dimension(), controllerName);
+                this.state.activate(player.getEyePosition(), player.getYRot(), Mth.clamp(this.config.cameraPitch, -90.0F, 90.0F), player.level().dimension(), controllerName);
+                this.state.setCameraPitch(this.config.cameraPitch);
                 this.resetFrameTimer();
             }
             return;
@@ -104,6 +106,7 @@ public final class DroneFlightController {
         }
 
         this.applyRotation(pollResult, frameSeconds);
+        this.applyKeyboardPitch(window, frameSeconds);
         this.applyMovement(player, level, frameSeconds);
     }
 
@@ -116,7 +119,7 @@ public final class DroneFlightController {
     }
 
     public float getCameraPitch() {
-        return this.state.cameraPitch();
+        return this.state.pitchOffset();
     }
 
     public float getCameraRoll() {
@@ -124,7 +127,7 @@ public final class DroneFlightController {
     }
 
     public DroneCameraAngles getCameraAngles() {
-        return new DroneCameraAngles(this.getCameraYaw(), this.getCameraPitch(), this.getCameraRoll());
+        return this.state.cameraAngles();
     }
 
     public String getActiveControllerName() {
@@ -140,6 +143,10 @@ public final class DroneFlightController {
     }
 
     public void forceDeactivate(final String reason) {
+        if (this.state.isActive()) {
+            this.config.cameraPitch = this.state.cameraPitchOffset();
+            this.config.save();
+        }
         this.state.deactivate();
         this.resetFrameTimer();
     }
@@ -262,6 +269,18 @@ public final class DroneFlightController {
 
     private static float smooth(final float current, final float target, final float factor) {
         return Mth.lerp(factor, current, target);
+    }
+
+    private void applyKeyboardPitch(final long window, final double frameSeconds) {
+        final boolean upPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_UP) == GLFW.GLFW_PRESS;
+        final boolean downPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_DOWN) == GLFW.GLFW_PRESS;
+        if (!(upPressed ^ downPressed) || frameSeconds <= 0.0D) {
+            return;
+        }
+
+        final float direction = upPressed ? 1.0F : -1.0F;
+        final float deltaPitch = direction * KEY_PITCH_RATE_DPS * (float) frameSeconds;
+        this.state.adjustCameraPitch(deltaPitch);
     }
 
     private static float actualRate(final float input, final float centerSensitivity, final float maxRate, final float expo) {

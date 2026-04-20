@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.kieran.clientdronecam.ClientDroneCam;
 import com.kieran.clientdronecam.platform.ClientConfigPaths;
+import net.minecraft.util.Mth;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
@@ -35,6 +36,7 @@ public final class DroneConfig {
     public float axisPitchMax = 1.0F;
     public float axisRollMin = -1.0F;
     public float axisRollMax = 1.0F;
+    public float cameraPitch = 0.0F;
     public boolean invertThrottle = true;
     public boolean invertYaw = false;
     public boolean invertPitch = true;
@@ -110,6 +112,7 @@ public final class DroneConfig {
         copy.axisPitchMax = this.axisPitchMax;
         copy.axisRollMin = this.axisRollMin;
         copy.axisRollMax = this.axisRollMax;
+        copy.cameraPitch = this.cameraPitch;
         copy.invertThrottle = this.invertThrottle;
         copy.invertYaw = this.invertYaw;
         copy.invertPitch = this.invertPitch;
@@ -141,6 +144,7 @@ public final class DroneConfig {
         rebound.axisPitchMax = this.axisPitchMax;
         rebound.axisRollMin = this.axisRollMin;
         rebound.axisRollMax = this.axisRollMax;
+        rebound.cameraPitch = this.cameraPitch;
         rebound.invertThrottle = this.invertThrottle;
         rebound.invertYaw = this.invertYaw;
         rebound.invertPitch = this.invertPitch;
@@ -151,6 +155,7 @@ public final class DroneConfig {
 
     private void clamp() {
         this.deadzone = Math.max(0.0F, Math.min(0.95F, this.deadzone));
+        this.cameraPitch = Mth.clamp(this.cameraPitch, -90.0F, 90.0F);
         clampAxisRange();
     }
 

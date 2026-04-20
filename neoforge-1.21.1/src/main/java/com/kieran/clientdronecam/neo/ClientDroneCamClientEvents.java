@@ -36,9 +36,12 @@ public final class ClientDroneCamClientEvents {
     }
 
     public static void onRenderGuiPost(final RenderGuiEvent.Post event) {
+        final Minecraft minecraft = Minecraft.getInstance();
         final String overlayText = ClientDroneCam.LIFECYCLE.getOverlayText();
         if (!overlayText.isEmpty()) {
-            event.getGuiGraphics().drawString(Minecraft.getInstance().font, Component.literal(overlayText), 6, 6, 0xFFFFFF, true);
+            final int x = minecraft.getWindow().getGuiScaledWidth() - minecraft.font.width(overlayText) - 6;
+            final int y = 6;
+            event.getGuiGraphics().drawString(minecraft.font, Component.literal(overlayText), x, y, 0xFFFFFF, true);
         }
     }
 
