@@ -116,6 +116,10 @@ public final class DroneFlightController {
         return this.state.cameraRoll();
     }
 
+    public DroneCameraAngles getCameraAngles() {
+        return new DroneCameraAngles(this.getCameraYaw(), this.getCameraPitch(), this.getCameraRoll());
+    }
+
     public String getActiveControllerName() {
         return this.state.controllerName();
     }

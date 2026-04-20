@@ -1,6 +1,7 @@
 package com.kieran.clientdronecam.neo;
 
 import com.kieran.clientdronecam.ClientDroneCam;
+import com.kieran.clientdronecam.flight.DroneCameraAngles;
 import com.kieran.clientdronecam.ui.DroneSetupScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -27,9 +28,10 @@ public final class ClientDroneCamClientEvents {
         ClientDroneCam.LIFECYCLE.onFrameUpdate(minecraft);
 
         if (ClientDroneCam.FLIGHT_CONTROLLER.isActive()) {
-            event.setYaw(ClientDroneCam.FLIGHT_CONTROLLER.getCameraYaw());
-            event.setPitch(ClientDroneCam.FLIGHT_CONTROLLER.getCameraPitch());
-            event.setRoll(ClientDroneCam.FLIGHT_CONTROLLER.getCameraRoll());
+            final DroneCameraAngles angles = ClientDroneCam.FLIGHT_CONTROLLER.getCameraAngles();
+            event.setYaw(angles.yaw());
+            event.setPitch(angles.pitch());
+            event.setRoll(angles.roll());
         }
     }
 
