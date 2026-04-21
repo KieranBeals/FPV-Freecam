@@ -1,0 +1,14 @@
+{
+  "key.categories.fpvfreecam": "FPV Freecam",
+  "key.fpvfreecam.open_setup": "Open Drone Setup",
+  "screen.fpvfreecam.setup": "Drone Setup",
+  "screen.fpvfreecam.controller": "Controller",
+  "screen.fpvfreecam.bindings": "Buttons",
+  "screen.fpvfreecam.axes": "Axes",
+  "screen.fpvfreecam.left_stick": "Left Stick",
+  "screen.fpvfreecam.right_stick": "Right Stick",
+  "screen.fpvfreecam.deadzone": "Deadzone",
+  "screen.fpvfreecam.done": "Done",
+  "screen.fpvfreecam.capture_button": "Press a button, flip a switch, or Esc to cancel",
+  "screen.fpvfreecam.capture_axis": "Move the stick you want to bind, then sweep it to min and max, or Esc to cancel"
+}

@@ -10,7 +10,7 @@ authors = "${mod_authors}"
 description = '''${mod_description}'''
 
 [[mixins]]
-config = "clientdronecam.mixins.json"
+config = "fpvfreecam.mixins.json"
 
 [[dependencies."${mod_id}"]]
 modId = "neoforge"

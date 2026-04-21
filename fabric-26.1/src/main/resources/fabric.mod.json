@@ -11,14 +11,14 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.kieran.clientdronecam.fabric.ClientDroneCamFabricClient"
+      "com.kieran.fpvfreecam.fabric.FpvFreecamFabricClient"
     ],
     "modmenu": [
-      "com.kieran.clientdronecam.fabric.ClientDroneCamModMenu"
+      "com.kieran.fpvfreecam.fabric.FpvFreecamModMenu"
     ]
   },
   "mixins": [
-    "clientdronecam.fabric.mixins.json"
+    "fpvfreecam.fabric.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${fabric_loader_version}",
