@@ -1,6 +1,7 @@
 package com.kieran.fpvfreecam.mixin.client;
 
 import com.kieran.fpvfreecam.FpvFreecam;
+import com.kieran.fpvfreecam.flight.DroneNetworkSafetyGuard;
 import net.minecraft.client.player.KeyboardInput;
 import net.minecraft.client.player.Input;
 import org.spongepowered.asm.mixin.Mixin;
@@ -12,7 +13,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class KeyboardInputMixin extends Input {
     @Inject(method = "tick(ZF)V", at = @At("RETURN"))
     private void fpvfreecam$zeroMovement(final CallbackInfo ci) {
-        if (FpvFreecam.FLIGHT_CONTROLLER == null || !FpvFreecam.FLIGHT_CONTROLLER.isActive()) {
+        final boolean active = FpvFreecam.FLIGHT_CONTROLLER != null && FpvFreecam.FLIGHT_CONTROLLER.isActive();
+        if (!DroneNetworkSafetyGuard.shouldSuppressPlayerInput(active)) {
             return;
         }
 

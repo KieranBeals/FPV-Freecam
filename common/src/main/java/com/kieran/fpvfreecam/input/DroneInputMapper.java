@@ -1,7 +1,6 @@
 package com.kieran.fpvfreecam.input;
 
 import com.kieran.fpvfreecam.config.DroneConfig;
-import com.kieran.fpvfreecam.flight.DroneCameraState;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWGamepadState;
@@ -51,33 +50,33 @@ public final class DroneInputMapper {
         }
 
         for (final ControllerInfo controller : controllers) {
-            if (!config.controllerGuid.isBlank()
-                    && config.controllerGuid.equals(controller.guid())
-                    && this.matchesConfiguredName(controller, config.controllerName)) {
+            if (!config.controller.controllerGuid.isBlank()
+                    && config.controller.controllerGuid.equals(controller.guid())
+                    && this.matchesConfiguredName(controller, config.controller.controllerName)) {
                 return controller;
             }
         }
 
         for (final ControllerInfo controller : controllers) {
-            if (!config.controllerGuid.isBlank() && config.controllerGuid.equals(controller.guid())) {
+            if (!config.controller.controllerGuid.isBlank() && config.controller.controllerGuid.equals(controller.guid())) {
                 return controller;
             }
         }
 
         for (final ControllerInfo controller : controllers) {
-            if (!config.controllerName.isBlank() && config.controllerName.equals(controller.name())) {
+            if (!config.controller.controllerName.isBlank() && config.controller.controllerName.equals(controller.name())) {
                 return controller;
             }
         }
 
         for (final ControllerInfo controller : controllers) {
-            if (!config.controllerName.isBlank() && config.controllerName.equals(controller.displayName())) {
+            if (!config.controller.controllerName.isBlank() && config.controller.controllerName.equals(controller.displayName())) {
                 return controller;
             }
         }
 
         for (final ControllerInfo controller : controllers) {
-            if (!config.controllerName.isBlank() && config.controllerName.equals(controller.alternateName())) {
+            if (!config.controller.controllerName.isBlank() && config.controller.controllerName.equals(controller.alternateName())) {
                 return controller;
             }
         }
@@ -95,10 +94,10 @@ public final class DroneInputMapper {
                 || configuredName.equals(controller.alternateName());
     }
 
-    public PollResult poll(final DroneConfig config, final DroneCameraState state) {
+    public PollResult poll(final DroneConfig config, final boolean[] previousButtons) {
         final ControllerInfo controller = this.resolveConfiguredController(config);
         if (controller == null) {
-            state.clearButtons();
+            clearButtons(previousButtons);
             return PollResult.disconnected();
         }
 
@@ -106,23 +105,23 @@ public final class DroneInputMapper {
             if (controller.gamepadMapped()) {
                 final GLFWGamepadState gamepadState = GLFWGamepadState.malloc(stack);
                 if (!GLFW.glfwGetGamepadState(controller.joystickId(), gamepadState)) {
-                    state.clearButtons();
+                    clearButtons(previousButtons);
                     return PollResult.disconnected();
                 }
 
-                final boolean togglePressed = this.edgePressed(gamepadState, state.previousButtons(), config.toggleButton);
-                final boolean exitPressed = this.edgePressed(gamepadState, state.previousButtons(), config.exitButton);
-                state.captureButtons(gamepadState);
+                final boolean togglePressed = this.edgePressed(gamepadState, previousButtons, config.controller.toggleButton);
+                final boolean exitPressed = this.edgePressed(gamepadState, previousButtons, config.controller.exitButton);
+                captureButtons(previousButtons, gamepadState);
 
                 return new PollResult(
                         true,
                         controller,
                         togglePressed,
                         exitPressed,
-                        this.readAxis(gamepadState, config.axisThrottle, config.axisThrottleMin, config.axisThrottleMax, config.deadzone, config.invertThrottle),
-                        this.readAxis(gamepadState, config.axisYaw, config.axisYawMin, config.axisYawMax, config.deadzone, config.invertYaw),
-                        this.readAxis(gamepadState, config.axisPitch, config.axisPitchMin, config.axisPitchMax, config.deadzone, config.invertPitch),
-                        this.readAxis(gamepadState, config.axisRoll, config.axisRollMin, config.axisRollMax, config.deadzone, config.invertRoll)
+                        this.readAxis(gamepadState, config.controller.axisThrottle, config.controller.axisThrottleMin, config.controller.axisThrottleMax, config.controller.deadzone, config.controller.invertThrottle),
+                        this.readAxis(gamepadState, config.controller.axisYaw, config.controller.axisYawMin, config.controller.axisYawMax, config.controller.deadzone, config.controller.invertYaw),
+                        this.readAxis(gamepadState, config.controller.axisPitch, config.controller.axisPitchMin, config.controller.axisPitchMax, config.controller.deadzone, config.controller.invertPitch),
+                        this.readAxis(gamepadState, config.controller.axisRoll, config.controller.axisRollMin, config.controller.axisRollMax, config.controller.deadzone, config.controller.invertRoll)
                 );
             }
 
@@ -130,24 +129,50 @@ public final class DroneInputMapper {
             final ByteBuffer buttons = GLFW.glfwGetJoystickButtons(controller.joystickId());
             final ByteBuffer hats = GLFW.glfwGetJoystickHats(controller.joystickId());
             if (axes == null) {
-                state.clearButtons();
+                clearButtons(previousButtons);
                 return PollResult.disconnected();
             }
 
-            final boolean togglePressed = this.edgePressed(buttons, hats, axes, state.previousButtons(), config.toggleButton);
-            final boolean exitPressed = this.edgePressed(buttons, hats, axes, state.previousButtons(), config.exitButton);
-            state.captureButtons(buttons, hats, axes);
+            final boolean togglePressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.toggleButton);
+            final boolean exitPressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.exitButton);
+            captureButtons(previousButtons, buttons, hats, axes);
 
             return new PollResult(
                     true,
                     controller,
                     togglePressed,
                     exitPressed,
-                    this.readAxis(axes, config.axisThrottle, config.axisThrottleMin, config.axisThrottleMax, config.deadzone, config.invertThrottle),
-                    this.readAxis(axes, config.axisYaw, config.axisYawMin, config.axisYawMax, config.deadzone, config.invertYaw),
-                    this.readAxis(axes, config.axisPitch, config.axisPitchMin, config.axisPitchMax, config.deadzone, config.invertPitch),
-                    this.readAxis(axes, config.axisRoll, config.axisRollMin, config.axisRollMax, config.deadzone, config.invertRoll)
+                    this.readAxis(axes, config.controller.axisThrottle, config.controller.axisThrottleMin, config.controller.axisThrottleMax, config.controller.deadzone, config.controller.invertThrottle),
+                    this.readAxis(axes, config.controller.axisYaw, config.controller.axisYawMin, config.controller.axisYawMax, config.controller.deadzone, config.controller.invertYaw),
+                    this.readAxis(axes, config.controller.axisPitch, config.controller.axisPitchMin, config.controller.axisPitchMax, config.controller.deadzone, config.controller.invertPitch),
+                    this.readAxis(axes, config.controller.axisRoll, config.controller.axisRollMin, config.controller.axisRollMax, config.controller.deadzone, config.controller.invertRoll)
             );
+        }
+    }
+
+    private static void clearButtons(final boolean[] previousButtons) {
+        for (int index = 0; index < previousButtons.length; index++) {
+            previousButtons[index] = false;
+        }
+    }
+
+    private static void captureButtons(final boolean[] previousButtons, final GLFWGamepadState gamepadState) {
+        for (int button = 0; button < previousButtons.length; button++) {
+            final boolean buttonPressed = button <= GLFW.GLFW_GAMEPAD_BUTTON_LAST
+                    && gamepadState.buttons(button) == GLFW.GLFW_PRESS;
+            final boolean axisPressed = isAxisButtonPressed(gamepadState, button);
+            previousButtons[button] = buttonPressed || axisPressed;
+        }
+    }
+
+    private static void captureButtons(final boolean[] previousButtons, final @Nullable ByteBuffer buttons, final @Nullable ByteBuffer hats, final @Nullable FloatBuffer axes) {
+        for (int button = 0; button < previousButtons.length; button++) {
+            final boolean buttonPressed = buttons != null
+                    && button < buttons.limit()
+                    && buttons.get(button) == GLFW.GLFW_PRESS;
+            final boolean hatPressed = isHatButtonPressed(hats, button);
+            final boolean axisPressed = isAxisButtonPressed(axes, button);
+            previousButtons[button] = buttonPressed || hatPressed || axisPressed;
         }
     }
 

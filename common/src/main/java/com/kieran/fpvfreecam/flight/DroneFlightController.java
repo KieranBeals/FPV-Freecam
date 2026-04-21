@@ -1,48 +1,38 @@
 package com.kieran.fpvfreecam.flight;
 
+import com.kieran.fpvfreecam.FpvFreecam;
 import com.kieran.fpvfreecam.config.DroneConfig;
 import com.kieran.fpvfreecam.input.DroneInputMapper;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.AxisAngle4f;
-import org.joml.Quaternionf;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.List;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 public final class DroneFlightController {
-    private static final double HALF_BOX_SIZE = 0.175D;
-    private static final double TICK_SECONDS = 1.0D / 20.0D;
-    private static final double MAX_FRAME_SECONDS = 1.0D / 20.0D;
-    // Approximate physical gravity (blocks/s²), with throttle centered for hover.
-    private static final double GRAVITY = 9.8D;
-    private static final double IDLE_THROTTLE = 0.10D;
-    private static final double HOVER_ZONE_START = 0.40D;
-    private static final double HOVER_ZONE_END = 0.60D;
-    private static final double HOVER_THRUST = 0.95D * GRAVITY;
-    private static final double MIN_HOVER_THRUST = 0.95D * GRAVITY;
-    private static final double MAX_HOVER_THRUST = 1.05D * GRAVITY;
-    private static final double MAX_UP_THRUST = 4.5D * GRAVITY;
-    private static final double LINEAR_DAMPING = 0.995D;
-    private static final double HORIZONTAL_DAMPING = 0.955D;
-    private static final float INPUT_SMOOTHING = 0.22F;
-    private static final float RATE_CENTER_SENSITIVITY = 200.0F;
-    private static final float RATE_MAX = 670.0F;
-    private static final float RATE_EXPO = 0.57F;
-    private static final float KEY_PITCH_RATE_DPS = 45.0F;
-    private static final double THROTTLE_IDLE = 0.0D;
+    private static final double FIXED_STEP_SECONDS = 1.0D / 240.0D;
+    private static final double MAX_CATCH_UP_SECONDS = 0.050D;
+    private static final int MAX_SUB_STEPS = 12;
+    private static final double MAX_FRAME_SECONDS = 0.250D;
+    private static final float KEY_CAMERA_ANGLE_RATE_DPS = 45.0F;
 
     private final DroneConfig config;
     private final DroneInputMapper inputMapper;
-    private final DroneCameraState state = new DroneCameraState();
+    private final DroneSimulationState state = new DroneSimulationState();
+    private final DroneRateModel rateModel = new DroneRateModel();
+    private final DroneCrashModel crashModel = new DroneCrashModel();
+    private final DronePhysicsModel physicsModel = new DronePhysicsModel(this.rateModel, this.crashModel);
+
     private long lastFrameTimeNanos = -1L;
+    private double accumulatorSeconds;
+    private boolean inactivityFpsOverrideActive;
+    private @Nullable Object previousInactivityFpsLimit;
+    private @Nullable Object inactivityFpsOption;
+    private boolean inactivityFpsOverrideUnavailableLogged;
 
     public DroneFlightController(final DroneConfig config, final DroneInputMapper inputMapper) {
         this.config = config;
@@ -50,7 +40,21 @@ public final class DroneFlightController {
     }
 
     public void tick(final Minecraft minecraft) {
-        this.handleSetupAndActivation(minecraft);
+        if (!this.state.isActive()) {
+            this.resetFrameTimer();
+            return;
+        }
+
+        final var player = minecraft.player;
+        final var level = minecraft.level;
+        if (player == null || level == null) {
+            this.forceDeactivate("missing_client_level");
+            return;
+        }
+
+        if (this.shouldForceStop(player.level(), player.isDeadOrDying())) {
+            this.forceDeactivate("player_state_changed");
+        }
     }
 
     public void updateFrame(final Minecraft minecraft) {
@@ -63,10 +67,9 @@ public final class DroneFlightController {
             return;
         }
 
-        this.handleSetupAndActivation(minecraft);
+        DroneNetworkSafetyGuard.enforceClientOnlyMode(this.config);
 
-        final double frameSeconds = this.consumeFrameSeconds();
-        final DroneInputMapper.PollResult pollResult = this.inputMapper.poll(this.config, this.state);
+        final DroneInputMapper.PollResult pollResult = this.inputMapper.poll(this.config, this.state.previousButtons());
         if (this.state.isActive() && !pollResult.connected()) {
             this.forceDeactivate("controller_disconnect");
             return;
@@ -89,8 +92,17 @@ public final class DroneFlightController {
         if (!this.state.isActive()) {
             if (pollResult.connected() && pollResult.togglePressed() && minecraft.screen == null) {
                 final String controllerName = pollResult.controller() == null ? "" : pollResult.controller().displayName();
-                this.state.activate(player.getEyePosition(), player.getYRot(), Mth.clamp(this.config.cameraPitch, -90.0F, 90.0F), player.level().dimension(), controllerName);
-                this.state.setCameraPitch(this.config.cameraPitch);
+                this.state.activate(
+                        player.getEyePosition(),
+                        player.getYRot(),
+                        player.getXRot(),
+                        player.level().dimension(),
+                        controllerName,
+                        this.config.craftProfile.cameraAngleDeg
+                );
+                this.resetFrameTimer();
+                this.enableInactivityFpsOverride(minecraft);
+            } else {
                 this.resetFrameTimer();
             }
             return;
@@ -101,13 +113,37 @@ public final class DroneFlightController {
             return;
         }
 
+        final double frameSeconds = this.consumeFrameSeconds();
+        this.applyKeyboardCameraAngle(window, frameSeconds);
         if (frameSeconds <= 0.0D) {
             return;
         }
 
-        this.applyRotation(pollResult, frameSeconds);
-        this.applyKeyboardPitch(window, frameSeconds);
-        this.applyMovement(player, level, frameSeconds);
+        this.accumulatorSeconds = Math.min(this.accumulatorSeconds + frameSeconds, MAX_CATCH_UP_SECONDS);
+        int subSteps = 0;
+        while (this.accumulatorSeconds >= FIXED_STEP_SECONDS && subSteps < MAX_SUB_STEPS) {
+            final DronePhysicsModel.StepOutcome stepOutcome = this.physicsModel.step(
+                    this.state,
+                    this.config,
+                    pollResult,
+                    player,
+                    level,
+                    FIXED_STEP_SECONDS
+            );
+            if (stepOutcome.crashed()) {
+                this.handleCrash(stepOutcome);
+                return;
+            }
+
+            this.accumulatorSeconds -= FIXED_STEP_SECONDS;
+            subSteps++;
+        }
+
+        if (subSteps >= MAX_SUB_STEPS && this.accumulatorSeconds >= FIXED_STEP_SECONDS) {
+            this.accumulatorSeconds = 0.0D;
+        }
+
+        this.state.setRenderAlpha((float) Mth.clamp(this.accumulatorSeconds / FIXED_STEP_SECONDS, 0.0D, 1.0D));
     }
 
     public boolean isActive() {
@@ -115,15 +151,15 @@ public final class DroneFlightController {
     }
 
     public float getCameraYaw() {
-        return this.state.cameraYaw();
+        return this.state.cameraAngles().yaw();
     }
 
     public float getCameraPitch() {
-        return this.state.pitchOffset();
+        return this.state.cameraAngleDeg();
     }
 
     public float getCameraRoll() {
-        return this.state.cameraRoll();
+        return this.state.cameraAngles().roll();
     }
 
     public DroneCameraAngles getCameraAngles() {
@@ -138,22 +174,53 @@ public final class DroneFlightController {
         if (!this.state.isActive()) {
             return null;
         }
+        return this.state.renderPosition(this.state.renderAlpha());
+    }
 
-        return this.state.renderPosition(partialTick);
+    public @Nullable HudSnapshot getHudSnapshot() {
+        if (!this.state.isActive()) {
+            return null;
+        }
+
+        return new HudSnapshot(
+                this.state.controllerName(),
+                this.state.cameraAngleDeg(),
+                (float) this.state.velocity().length(),
+                this.state.motorThrottle() * 100.0F,
+                this.state.batterySagLoss() * 100.0F,
+                this.state.isArmed(),
+                this.state.isCrashed(),
+                this.state.rollRateDegPerSecond(),
+                this.state.pitchRateDegPerSecond(),
+                this.state.yawRateDegPerSecond(),
+                this.state.lastImpactSpeed()
+        );
     }
 
     public void forceDeactivate(final String reason) {
         if (this.state.isActive()) {
-            this.config.cameraPitch = this.state.cameraPitchOffset();
+            this.config.craftProfile.cameraAngleDeg = this.state.cameraAngleDeg();
             this.config.save();
         }
         this.state.deactivate();
+        this.disableInactivityFpsOverride(Minecraft.getInstance());
         this.resetFrameTimer();
     }
 
-    private void handleSetupAndActivation(final Minecraft minecraft) {
-        if (!this.state.isActive()) {
-            this.resetFrameTimer();
+    private void handleCrash(final DronePhysicsModel.StepOutcome stepOutcome) {
+        this.state.markCrash(stepOutcome.impactSpeed(), stepOutcome.impactEnergy());
+        switch (this.config.crashSettings.crashResetMode) {
+            case EXIT_TO_PLAYER -> this.forceDeactivate("crash_exit_to_player");
+            case QUICK_REARM -> {
+                this.state.queueQuickRearmFromLaunch();
+                this.forceDeactivate("crash_quick_rearm");
+            }
+            case CHECKPOINT_RESPAWN -> {
+                final boolean restored = this.state.restoreCheckpoint();
+                if (!restored) {
+                    this.forceDeactivate("crash_no_checkpoint");
+                }
+            }
         }
     }
 
@@ -161,81 +228,7 @@ public final class DroneFlightController {
         if (deadOrDying || this.state.dimension() == null) {
             return true;
         }
-
         return !this.state.dimension().equals(level.dimension());
-    }
-
-    private void applyRotation(final DroneInputMapper.PollResult pollResult, final double frameSeconds) {
-        final float filteredThrottle = smooth(this.state.filteredThrottle(), pollResult.throttle(), INPUT_SMOOTHING);
-        final float filteredYaw = smooth(this.state.filteredYaw(), pollResult.yaw(), INPUT_SMOOTHING);
-        final float filteredPitch = smooth(this.state.filteredPitch(), pollResult.pitch(), INPUT_SMOOTHING);
-        final float filteredRoll = smooth(this.state.filteredRoll(), pollResult.roll(), INPUT_SMOOTHING);
-
-        this.state.setFilteredThrottle(filteredThrottle);
-        this.state.setFilteredYaw(filteredYaw);
-        this.state.setFilteredPitch(filteredPitch);
-        this.state.setFilteredRoll(filteredRoll);
-
-        final float pitchRate = -actualRate(filteredPitch, RATE_CENTER_SENSITIVITY, RATE_MAX, RATE_EXPO);
-        final float rollRate = actualRate(filteredRoll, RATE_CENTER_SENSITIVITY, RATE_MAX, RATE_EXPO);
-        final float yawRate = actualRate(filteredYaw, RATE_CENTER_SENSITIVITY, RATE_MAX, RATE_EXPO);
-
-        this.state.setPitchVelocity(pitchRate);
-        this.state.setRollVelocity(rollRate);
-        this.state.setYawVelocity(yawRate);
-
-        final Quaternionf orientation = this.state.orientation();
-        final Vec3 startUp = this.state.upVector();
-        final Vec3 startRight = this.state.rightVector();
-        final Vec3 startForward = this.state.forwardVector();
-
-        final float yawRadians = (float) Math.toRadians(yawRate * frameSeconds);
-        final float pitchRadians = (float) Math.toRadians(pitchRate * frameSeconds);
-        final float rollRadians = (float) Math.toRadians(rollRate * frameSeconds);
-
-        // Apply local-stick rotations against the craft basis sampled at frame start:
-        // 1. yaw around local up
-        // 2. pitch around local right
-        // 3. roll around local forward
-        final Quaternionf yawDelta = axisRotation(startUp, yawRadians);
-        final Quaternionf pitchDelta = axisRotation(startRight, pitchRadians);
-        final Quaternionf rollDelta = axisRotation(startForward, rollRadians);
-
-        orientation.premul(yawDelta);
-        orientation.premul(pitchDelta);
-        orientation.premul(rollDelta);
-        this.state.setOrientation(orientation);
-    }
-
-    private void applyMovement(final Entity player, final Level level, final double frameSeconds) {
-        final Vec3 craftUp = this.state.upVector();
-        final double throttle = (this.state.filteredThrottle() + 1.0D) * 0.5D;
-        final double thrust = this.thrustByThrottle(throttle);
-        final Vec3 acceleration = craftUp.scale(thrust).add(0.0D, -GRAVITY, 0.0D);
-
-        Vec3 velocity = this.state.velocity().add(acceleration.scale(frameSeconds));
-        final double horizontalDamping = Math.pow(HORIZONTAL_DAMPING, frameSeconds / TICK_SECONDS);
-        final double verticalDamping = Math.pow(LINEAR_DAMPING, frameSeconds / TICK_SECONDS);
-        velocity = new Vec3(velocity.x * horizontalDamping, velocity.y * verticalDamping, velocity.z * horizontalDamping);
-        final Vec3 attemptedMove = velocity.scale(frameSeconds);
-        final AABB currentBox = cameraBox(this.state.position());
-        final AABB movedBox = currentBox.move(attemptedMove);
-        if (!hasLoadedTerrain(level, movedBox)) {
-            this.state.setVelocity(Vec3.ZERO);
-            this.state.setPosition(this.state.position());
-            return;
-        }
-
-        final Vec3 allowedMove = Entity.collideBoundingBox(player, attemptedMove, currentBox, level, List.of());
-        final Vec3 nextPosition = this.state.position().add(allowedMove);
-        this.state.setPosition(nextPosition);
-
-        velocity = new Vec3(
-                Math.abs(attemptedMove.x - allowedMove.x) > 1.0E-7D ? 0.0D : velocity.x,
-                Math.abs(attemptedMove.y - allowedMove.y) > 1.0E-7D ? 0.0D : velocity.y,
-                Math.abs(attemptedMove.z - allowedMove.z) > 1.0E-7D ? 0.0D : velocity.z
-        );
-        this.state.setVelocity(velocity);
     }
 
     private double consumeFrameSeconds() {
@@ -252,6 +245,23 @@ public final class DroneFlightController {
 
     private void resetFrameTimer() {
         this.lastFrameTimeNanos = -1L;
+        this.accumulatorSeconds = 0.0D;
+        this.state.setRenderAlpha(1.0F);
+    }
+
+    private void applyKeyboardCameraAngle(final long window, final double frameSeconds) {
+        if (window == 0L || frameSeconds <= 0.0D || !this.config.controller.allowInFlightCameraAngleAdjust) {
+            return;
+        }
+
+        final boolean upPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_UP) == GLFW.GLFW_PRESS;
+        final boolean downPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_DOWN) == GLFW.GLFW_PRESS;
+        if (!(upPressed ^ downPressed)) {
+            return;
+        }
+
+        final float direction = upPressed ? 1.0F : -1.0F;
+        this.state.adjustCameraAngle(direction * KEY_CAMERA_ANGLE_RATE_DPS * (float) frameSeconds);
     }
 
     private static long windowHandle(final Minecraft minecraft) {
@@ -267,89 +277,189 @@ public final class DroneFlightController {
         }
     }
 
-    private static float smooth(final float current, final float target, final float factor) {
-        return Mth.lerp(factor, current, target);
-    }
-
-    private void applyKeyboardPitch(final long window, final double frameSeconds) {
-        final boolean upPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_UP) == GLFW.GLFW_PRESS;
-        final boolean downPressed = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_DOWN) == GLFW.GLFW_PRESS;
-        if (!(upPressed ^ downPressed) || frameSeconds <= 0.0D) {
+    private void enableInactivityFpsOverride(final Minecraft minecraft) {
+        if (this.inactivityFpsOverrideActive) {
             return;
         }
 
-        final float direction = upPressed ? 1.0F : -1.0F;
-        final float deltaPitch = direction * KEY_PITCH_RATE_DPS * (float) frameSeconds;
-        this.state.adjustCameraPitch(deltaPitch);
-    }
+        try {
+            final Object option = this.findInactivityFpsOption(minecraft);
+            if (option == null) {
+                this.logInactivityFpsOverrideUnavailable(new IllegalStateException("inactivity FPS option not found"));
+                return;
+            }
 
-    private static float actualRate(final float input, final float centerSensitivity, final float maxRate, final float expo) {
-        final float magnitude = Math.abs(input);
-        final float shaped = centerSensitivity * magnitude
-                + (maxRate - centerSensitivity) * blendCurve(magnitude, expo);
-        return Math.copySign(shaped, input);
-    }
+            final Object currentValue = this.optionGet(option);
+            final Object overrideValue = this.selectOverrideValue(currentValue);
+            if (currentValue == null || overrideValue == null) {
+                this.logInactivityFpsOverrideUnavailable(new IllegalStateException("inactivity FPS option values unavailable"));
+                return;
+            }
 
-    private static double thrustByThrottle(final double throttle) {
-        if (throttle <= 0.0D) {
-            return 0.0D;
+            this.previousInactivityFpsLimit = currentValue;
+            this.inactivityFpsOption = option;
+            if (currentValue != overrideValue) {
+                this.optionSet(option, overrideValue);
+            }
+            this.inactivityFpsOverrideActive = true;
+        } catch (final Throwable throwable) {
+            this.logInactivityFpsOverrideUnavailable(throwable);
+            this.inactivityFpsOverrideActive = false;
+            this.previousInactivityFpsLimit = null;
+            this.inactivityFpsOption = null;
         }
-        if (throttle < IDLE_THROTTLE) {
-            return 0.0D;
-        }
-        if (throttle < HOVER_ZONE_START) {
-            final double normalized = (throttle - IDLE_THROTTLE) / (HOVER_ZONE_START - IDLE_THROTTLE);
-            return smoothStep(0.0D, 1.0D, normalized) * MIN_HOVER_THRUST;
-        }
-        if (throttle < HOVER_ZONE_END) {
-            final double normalized = (throttle - HOVER_ZONE_START) / (HOVER_ZONE_END - HOVER_ZONE_START);
-            return Mth.lerp(normalized, MIN_HOVER_THRUST, MAX_HOVER_THRUST);
+    }
+
+    private void disableInactivityFpsOverride(final Minecraft minecraft) {
+        if (!this.inactivityFpsOverrideActive) {
+            return;
         }
 
-        final double normalized = Mth.clamp((throttle - HOVER_ZONE_END) / (1.0D - HOVER_ZONE_END), 0.0D, 1.0D);
-        final double clampedNorm = smoothStep(0.0D, 1.0D, normalized);
-        return Mth.lerp(clampedNorm, MAX_HOVER_THRUST, MAX_UP_THRUST);
-    }
-
-    private static double smoothStep(final double edge0, final double edge1, final double x) {
-        final double t = Mth.clamp((x - edge0) / (edge1 - edge0), 0.0D, 1.0D);
-        return t * t * (3.0D - 2.0D * t);
-    }
-
-    private static float blendCurve(final float x, final float expo) {
-        final float squared = x * x;
-        final float cubed = squared * x;
-        return (1.0F - expo) * squared + expo * cubed;
-    }
-
-    private static boolean hasLoadedTerrain(final Level level, final AABB box) {
-        return hasLoadedChunk(level, box.minX, box.minY, box.minZ)
-                && hasLoadedChunk(level, box.minX, box.minY, box.maxZ)
-                && hasLoadedChunk(level, box.maxX, box.minY, box.minZ)
-                && hasLoadedChunk(level, box.maxX, box.minY, box.maxZ)
-                && hasLoadedChunk(level, box.minX, box.maxY, box.minZ)
-                && hasLoadedChunk(level, box.maxX, box.maxY, box.maxZ);
-    }
-
-    private static boolean hasLoadedChunk(final Level level, final double x, final double y, final double z) {
-        return level.hasChunkAt(BlockPos.containing(x, y, z));
-    }
-
-    private static AABB cameraBox(final Vec3 position) {
-        return new AABB(
-                position.x - HALF_BOX_SIZE,
-                position.y - HALF_BOX_SIZE,
-                position.z - HALF_BOX_SIZE,
-                position.x + HALF_BOX_SIZE,
-                position.y + HALF_BOX_SIZE,
-                position.z + HALF_BOX_SIZE
-        );
-    }
-
-    private static Quaternionf axisRotation(final Vec3 axis, final float angleRadians) {
-        if (Math.abs(angleRadians) < 1.0E-8F) {
-            return new Quaternionf();
+        try {
+            if (this.previousInactivityFpsLimit != null && this.inactivityFpsOption != null) {
+                this.optionSet(this.inactivityFpsOption, this.previousInactivityFpsLimit);
+            }
+        } catch (final Throwable throwable) {
+            this.logInactivityFpsOverrideUnavailable(throwable);
+        } finally {
+            this.inactivityFpsOverrideActive = false;
+            this.previousInactivityFpsLimit = null;
+            this.inactivityFpsOption = null;
         }
-        return new Quaternionf().set(new AxisAngle4f(angleRadians, (float) axis.x, (float) axis.y, (float) axis.z));
+    }
+
+    private @Nullable Object findInactivityFpsOption(final Minecraft minecraft) {
+        final Object options = minecraft.options;
+        for (final String methodName : new String[]{"inactivityFpsLimit", "getInactivityFpsLimit"}) {
+            try {
+                final Method method = options.getClass().getMethod(methodName);
+                final Object value = method.invoke(options);
+                if (value != null) {
+                    return value;
+                }
+            } catch (final ReflectiveOperationException ignored) {
+            }
+        }
+
+        for (final String fieldName : new String[]{"inactivityFpsLimit"}) {
+            try {
+                final Field field = options.getClass().getDeclaredField(fieldName);
+                field.setAccessible(true);
+                final Object value = field.get(options);
+                if (value != null) {
+                    return value;
+                }
+            } catch (final ReflectiveOperationException ignored) {
+            }
+        }
+
+        for (final Field field : options.getClass().getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                final Object candidate = field.get(options);
+                if (this.isInactivityFpsOptionCandidate(candidate)) {
+                    return candidate;
+                }
+            } catch (final ReflectiveOperationException ignored) {
+            }
+        }
+
+        return null;
+    }
+
+    private boolean isInactivityFpsOptionCandidate(final @Nullable Object candidate) {
+        if (candidate == null) {
+            return false;
+        }
+        try {
+            final Object value = this.optionGet(candidate);
+            if (!(value instanceof Enum<?> currentEnum)) {
+                return false;
+            }
+            final Class<?> enumType = currentEnum.getDeclaringClass();
+            return this.hasEnumConstant(enumType, "AFK") || this.hasEnumConstant(enumType, "MINIMIZED");
+        } catch (final ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
+    private Object optionGet(final Object optionInstance) throws ReflectiveOperationException {
+        for (final String getterName : new String[]{"get", "getValue"}) {
+            try {
+                final Method getter = optionInstance.getClass().getMethod(getterName);
+                return getter.invoke(optionInstance);
+            } catch (final NoSuchMethodException ignored) {
+            }
+        }
+        throw new NoSuchMethodException("No option getter found");
+    }
+
+    private void optionSet(final Object optionInstance, final Object value) throws ReflectiveOperationException {
+        for (final String setterName : new String[]{"set", "setValue"}) {
+            for (final Method method : optionInstance.getClass().getMethods()) {
+                if (!method.getName().equals(setterName) || method.getParameterCount() != 1) {
+                    continue;
+                }
+                final Class<?> parameterType = method.getParameterTypes()[0];
+                if (parameterType.isInstance(value) || (parameterType.isEnum() && value.getClass().isEnum())) {
+                    method.invoke(optionInstance, value);
+                    return;
+                }
+            }
+        }
+        throw new NoSuchMethodException("No compatible option setter found");
+    }
+
+    private @Nullable Object selectOverrideValue(final Object currentValue) {
+        if (!(currentValue instanceof Enum<?> currentEnum)) {
+            return null;
+        }
+
+        final Class<?> enumType = currentEnum.getDeclaringClass();
+        Object firstNonAfk = null;
+        for (final Object constant : enumType.getEnumConstants()) {
+            if (!(constant instanceof Enum<?> enumConstant)) {
+                continue;
+            }
+            if ("MINIMIZED".equals(enumConstant.name())) {
+                return constant;
+            }
+            if (!"AFK".equals(enumConstant.name()) && firstNonAfk == null) {
+                firstNonAfk = constant;
+            }
+        }
+        return firstNonAfk != null ? firstNonAfk : currentValue;
+    }
+
+    private boolean hasEnumConstant(final Class<?> enumType, final String constantName) {
+        for (final Object constant : enumType.getEnumConstants()) {
+            if (constant instanceof Enum<?> enumConstant && constantName.equals(enumConstant.name())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void logInactivityFpsOverrideUnavailable(final Throwable throwable) {
+        if (this.inactivityFpsOverrideUnavailableLogged) {
+            return;
+        }
+        this.inactivityFpsOverrideUnavailableLogged = true;
+        FpvFreecam.LOGGER.warn("FPV inactivity FPS override unavailable on this runtime; continuing without override.", throwable);
+    }
+
+    public record HudSnapshot(
+            String controllerName,
+            float cameraAngleDeg,
+            float speedMps,
+            float throttlePercent,
+            float sagPercent,
+            boolean armed,
+            boolean crashed,
+            float rollRateDegPerSecond,
+            float pitchRateDegPerSecond,
+            float yawRateDegPerSecond,
+            float impactSpeed
+    ) {
     }
 }

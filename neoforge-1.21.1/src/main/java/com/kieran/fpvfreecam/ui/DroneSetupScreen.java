@@ -2,27 +2,38 @@ package com.kieran.fpvfreecam.ui;
 
 import com.kieran.fpvfreecam.FpvFreecam;
 import com.kieran.fpvfreecam.config.DroneConfig;
+import com.kieran.fpvfreecam.flight.DroneProfileDefaults;
+import com.kieran.fpvfreecam.flight.DroneRateModel;
 import com.kieran.fpvfreecam.input.DroneInputMapper;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import org.jetbrains.annotations.Nullable;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public final class DroneSetupScreen extends Screen {
     private static final int LABEL_COLOR = 0xE0E0E0;
+    private static final int MUTED_COLOR = 0xA0A0A0;
     private static final long CAPTURE_GRACE_MS = 200L;
     private static final long AXIS_CALIBRATION_MS = 2500L;
     private static final float AXIS_CALIBRATION_RANGE_MIN = 0.5F;
 
     private final Screen parent;
     private final DroneConfig workingConfig;
+    private final DroneRateModel rateModel = new DroneRateModel();
+    private final List<AbstractWidget> pageWidgets = new ArrayList<>();
+
+    private Page page = Page.CONTROLLER;
+
+    private Button previousPageButton;
+    private Button nextPageButton;
+    private Button doneButton;
 
     private Button controllerButton;
     private Button toggleButton;
@@ -35,7 +46,11 @@ public final class DroneSetupScreen extends Screen {
     private Button yawInvertButton;
     private Button pitchInvertButton;
     private Button rollInvertButton;
-    private EditBox deadzoneBox;
+    private Button inFlightTiltAdjustButton;
+
+    private Button crashModeButton;
+    private Button safetyDebugButton;
+
     private CaptureTarget captureTarget = CaptureTarget.NONE;
     private long captureStartTime;
     private @Nullable DroneInputMapper.ButtonCaptureSnapshot buttonCaptureSnapshot;
@@ -49,61 +64,268 @@ public final class DroneSetupScreen extends Screen {
 
     @Override
     protected void init() {
-        final int centerX = this.width / 2;
-        final int left = centerX - 155;
-        final int right = centerX + 5;
-        final int wideButtonWidth = 150;
-        final int axisButtonWidth = 110;
-        final int invertButtonWidth = 70;
-        int y = 40;
+        this.rebuildPageWidgets();
+    }
 
-        this.controllerButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
+    private void rebuildPageWidgets() {
+        this.clearWidgets();
+        this.pageWidgets.clear();
+
+        final int centerX = this.width / 2;
+        final int bottomY = this.height - 28;
+        final Button pageLabel = this.addPageWidget(Button.builder(
+                        Component.literal("Page " + (this.page.ordinal() + 1) + "/4 - " + this.page.title),
+                        button -> {
+                        })
+                .bounds(centerX - 170, 14, 340, 20)
+                .build());
+        pageLabel.active = false;
+        final Button pageHelpLabel = this.addPageWidget(Button.builder(Component.literal(this.page.helpText), button -> {
+        }).bounds(centerX - 170, this.height - 52, 340, 20).build());
+        pageHelpLabel.active = false;
+        final Button safetyLabel = this.addPageWidget(Button.builder(
+                        Component.literal("Client-side FPV freecam only. No FPV packets are sent."),
+                        button -> {
+                        })
+                .bounds(centerX - 170, this.height - 40, 340, 20)
+                .build());
+        safetyLabel.active = false;
+
+        this.previousPageButton = this.addRenderableWidget(Button.builder(Component.literal("< Prev"), button -> this.switchPage(-1))
+                .bounds(centerX - 170, bottomY, 80, 20)
+                .build());
+        this.nextPageButton = this.addRenderableWidget(Button.builder(Component.literal("Next >"), button -> this.switchPage(1))
+                .bounds(centerX - 84, bottomY, 80, 20)
+                .build());
+        this.doneButton = this.addRenderableWidget(Button.builder(Component.translatable("screen.fpvfreecam.done"), button -> this.onClose())
+                .bounds(centerX + 90, bottomY, 80, 20)
+                .build());
+
+        switch (this.page) {
+            case CONTROLLER -> this.buildControllerPage();
+            case RATES -> this.buildRatesPage();
+            case CRAFT -> this.buildCraftPage();
+            case REALISM_CRASH -> this.buildRealismPage();
+        }
+
+        this.previousPageButton.active = this.page != Page.CONTROLLER;
+        this.nextPageButton.active = this.page != Page.REALISM_CRASH;
+        this.refreshPageLabels();
+    }
+
+    private void buildControllerPage() {
+        final int centerX = this.width / 2;
+        final int left = centerX - 160;
+        final int right = centerX + 5;
+        int y = 48;
+
+        this.controllerButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
             this.cycleController();
             this.saveAndRefresh();
-        }).bounds(left, y, 310, 20).build());
+        }).bounds(left, y, 325, 20).build());
         y += 28;
 
-        this.toggleButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.TOGGLE_BUTTON))
-                .bounds(left, y, wideButtonWidth, 20).build());
-        this.exitButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.EXIT_BUTTON))
-                .bounds(right, y, wideButtonWidth, 20).build());
-        y += 36;
+        this.addPageWidget(Button.builder(Component.literal("Apply 5in Realistic Preset"), button -> {
+            this.applyRealisticFiveInchPreset();
+            this.saveAndRebuild();
+        }).bounds(left, y, 325, 20).build());
+        y += 28;
 
-        this.throttleAxisButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.THROTTLE_AXIS))
-                .bounds(left, y, axisButtonWidth, 20).build());
-        this.throttleInvertButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
-            this.workingConfig.invertThrottle = !this.workingConfig.invertThrottle;
-            this.saveAndRefresh();
-        }).bounds(left + axisButtonWidth + 10, y, invertButtonWidth, 20).build());
-        this.yawAxisButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.YAW_AXIS))
-                .bounds(right, y, axisButtonWidth, 20).build());
-        this.yawInvertButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
-            this.workingConfig.invertYaw = !this.workingConfig.invertYaw;
-            this.saveAndRefresh();
-        }).bounds(right + axisButtonWidth + 10, y, invertButtonWidth, 20).build());
-        y += 38;
+        this.toggleButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.TOGGLE_BUTTON))
+                .bounds(left, y, 160, 20)
+                .build());
+        this.exitButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.EXIT_BUTTON))
+                .bounds(right, y, 160, 20)
+                .build());
+        this.addFieldLabel(left, y - 11, "Toggle Binding");
+        this.addFieldLabel(right, y - 11, "Exit Binding");
+        y += 34;
 
-        this.pitchAxisButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.PITCH_AXIS))
-                .bounds(left, y, axisButtonWidth, 20).build());
-        this.pitchInvertButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
-            this.workingConfig.invertPitch = !this.workingConfig.invertPitch;
+        this.throttleAxisButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.THROTTLE_AXIS))
+                .bounds(left, y, 180, 20)
+                .build());
+        this.throttleInvertButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.controller.invertThrottle = !this.workingConfig.controller.invertThrottle;
             this.saveAndRefresh();
-        }).bounds(left + axisButtonWidth + 10, y, invertButtonWidth, 20).build());
-        this.rollAxisButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.ROLL_AXIS))
-                .bounds(right, y, axisButtonWidth, 20).build());
-        this.rollInvertButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
-            this.workingConfig.invertRoll = !this.workingConfig.invertRoll;
+        }).bounds(left + 188, y, 132, 20).build());
+        this.addFieldLabel(left, y - 11, "Throttle Axis");
+        this.addFieldLabel(left + 188, y - 11, "Throttle Invert");
+        y += 30;
+
+        this.yawAxisButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.YAW_AXIS))
+                .bounds(left, y, 180, 20)
+                .build());
+        this.yawInvertButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.controller.invertYaw = !this.workingConfig.controller.invertYaw;
             this.saveAndRefresh();
-        }).bounds(right + axisButtonWidth + 10, y, invertButtonWidth, 20).build());
-        y += 36;
+        }).bounds(left + 188, y, 132, 20).build());
+        this.addFieldLabel(left, y - 11, "Yaw Axis");
+        this.addFieldLabel(left + 188, y - 11, "Yaw Invert");
+        y += 30;
 
-        this.deadzoneBox = this.addRenderableWidget(new EditBox(this.font, left, y, 90, 20, Component.translatable("screen.fpvfreecam.deadzone")));
-        this.deadzoneBox.setValue(String.format("%.2f", this.workingConfig.deadzone));
-        this.deadzoneBox.setResponder(value -> this.handleDeadzoneEdited(value));
-        this.addRenderableWidget(Button.builder(Component.translatable("screen.fpvfreecam.done"), button -> this.onClose())
-                .bounds(right + 160, this.height - 28, 70, 20).build());
+        this.pitchAxisButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.PITCH_AXIS))
+                .bounds(left, y, 180, 20)
+                .build());
+        this.pitchInvertButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.controller.invertPitch = !this.workingConfig.controller.invertPitch;
+            this.saveAndRefresh();
+        }).bounds(left + 188, y, 132, 20).build());
+        this.addFieldLabel(left, y - 11, "Pitch Axis");
+        this.addFieldLabel(left + 188, y - 11, "Pitch Invert");
+        y += 30;
 
-        this.refreshLabels();
+        this.rollAxisButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.ROLL_AXIS))
+                .bounds(left, y, 180, 20)
+                .build());
+        this.rollInvertButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.controller.invertRoll = !this.workingConfig.controller.invertRoll;
+            this.saveAndRefresh();
+        }).bounds(left + 188, y, 132, 20).build());
+        this.addFieldLabel(left, y - 11, "Roll Axis");
+        this.addFieldLabel(left + 188, y - 11, "Roll Invert");
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Deadzone");
+        this.addFieldLabel(right, y - 11, "In-flight Cam Adjust");
+        this.addFloatField(left, y, 90, this.workingConfig.controller.deadzone, value -> this.workingConfig.controller.deadzone = value);
+        this.inFlightTiltAdjustButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.controller.allowInFlightCameraAngleAdjust = !this.workingConfig.controller.allowInFlightCameraAngleAdjust;
+            this.saveAndRefresh();
+        }).bounds(right, y, 190, 20).build());
+    }
+
+    private void buildRatesPage() {
+        final int centerX = this.width / 2;
+        final int left = centerX - 160;
+        final int columnGap = 105;
+        int y = 62;
+
+        this.addFieldLabel(left, y - 11, "Roll RC Rate");
+        this.addFieldLabel(left + columnGap, y - 11, "Roll Super");
+        this.addFieldLabel(left + columnGap * 2, y - 11, "Roll Expo");
+        this.addFloatField(left, y, 90, this.workingConfig.rateProfile.rollRcRate, value -> this.workingConfig.rateProfile.rollRcRate = value);
+        this.addFloatField(left + columnGap, y, 90, this.workingConfig.rateProfile.rollSuperRate, value -> this.workingConfig.rateProfile.rollSuperRate = value);
+        this.addFloatField(left + columnGap * 2, y, 90, this.workingConfig.rateProfile.rollExpo, value -> this.workingConfig.rateProfile.rollExpo = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Pitch RC Rate");
+        this.addFieldLabel(left + columnGap, y - 11, "Pitch Super");
+        this.addFieldLabel(left + columnGap * 2, y - 11, "Pitch Expo");
+        this.addFloatField(left, y, 90, this.workingConfig.rateProfile.pitchRcRate, value -> this.workingConfig.rateProfile.pitchRcRate = value);
+        this.addFloatField(left + columnGap, y, 90, this.workingConfig.rateProfile.pitchSuperRate, value -> this.workingConfig.rateProfile.pitchSuperRate = value);
+        this.addFloatField(left + columnGap * 2, y, 90, this.workingConfig.rateProfile.pitchExpo, value -> this.workingConfig.rateProfile.pitchExpo = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Yaw RC Rate");
+        this.addFieldLabel(left + columnGap, y - 11, "Yaw Super");
+        this.addFieldLabel(left + columnGap * 2, y - 11, "Yaw Expo");
+        this.addFloatField(left, y, 90, this.workingConfig.rateProfile.yawRcRate, value -> this.workingConfig.rateProfile.yawRcRate = value);
+        this.addFloatField(left + columnGap, y, 90, this.workingConfig.rateProfile.yawSuperRate, value -> this.workingConfig.rateProfile.yawSuperRate = value);
+        this.addFloatField(left + columnGap * 2, y, 90, this.workingConfig.rateProfile.yawExpo, value -> this.workingConfig.rateProfile.yawExpo = value);
+    }
+
+    private void buildCraftPage() {
+        final int centerX = this.width / 2;
+        final int left = centerX - 160;
+        final int right = centerX + 8;
+        int y = 58;
+
+        this.addFieldLabel(left, y - 11, "Camera Angle (deg)");
+        this.addFieldLabel(left + 98, y - 11, "Throttle Mid");
+        this.addFieldLabel(left + 196, y - 11, "Throttle Expo");
+        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.cameraAngleDeg, value -> this.workingConfig.craftProfile.cameraAngleDeg = value);
+        this.addFloatField(left + 98, y, 90, this.workingConfig.throttleProfile.throttleMid, value -> this.workingConfig.throttleProfile.throttleMid = value);
+        this.addFloatField(left + 196, y, 90, this.workingConfig.throttleProfile.throttleExpo, value -> this.workingConfig.throttleProfile.throttleExpo = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Thrust/Weight");
+        this.addFieldLabel(left + 98, y - 11, "Spool Up (s)");
+        this.addFieldLabel(left + 196, y - 11, "Spool Down (s)");
+        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.thrustToWeight, value -> this.workingConfig.craftProfile.thrustToWeight = value);
+        this.addFloatField(left + 98, y, 90, this.workingConfig.craftProfile.motorSpoolUpSeconds, value -> this.workingConfig.craftProfile.motorSpoolUpSeconds = value);
+        this.addFloatField(left + 196, y, 90, this.workingConfig.craftProfile.motorSpoolDownSeconds, value -> this.workingConfig.craftProfile.motorSpoolDownSeconds = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Forward Drag");
+        this.addFieldLabel(left + 98, y - 11, "Side Drag");
+        this.addFieldLabel(left + 196, y - 11, "Vertical Drag");
+        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.forwardDrag, value -> this.workingConfig.craftProfile.forwardDrag = value);
+        this.addFloatField(left + 98, y, 90, this.workingConfig.craftProfile.sideDrag, value -> this.workingConfig.craftProfile.sideDrag = value);
+        this.addFloatField(left + 196, y, 90, this.workingConfig.craftProfile.verticalDrag, value -> this.workingConfig.craftProfile.verticalDrag = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Roll Response (s)");
+        this.addFieldLabel(left + 98, y - 11, "Pitch Response (s)");
+        this.addFieldLabel(left + 196, y - 11, "Yaw Response (s)");
+        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.rollResponseSeconds, value -> this.workingConfig.craftProfile.rollResponseSeconds = value);
+        this.addFloatField(left + 98, y, 90, this.workingConfig.craftProfile.pitchResponseSeconds, value -> this.workingConfig.craftProfile.pitchResponseSeconds = value);
+        this.addFloatField(left + 196, y, 90, this.workingConfig.craftProfile.yawResponseSeconds, value -> this.workingConfig.craftProfile.yawResponseSeconds = value);
+
+        this.addPageWidget(Button.builder(Component.literal("Reset 5-inch Defaults"), button -> {
+            this.workingConfig.craftProfile.cameraAngleDeg = 28.0F;
+            this.workingConfig.throttleProfile.throttleMid = 0.34F;
+            this.workingConfig.throttleProfile.throttleExpo = 0.22F;
+            this.workingConfig.craftProfile.thrustToWeight = 5.5F;
+            this.workingConfig.craftProfile.motorSpoolUpSeconds = 0.060F;
+            this.workingConfig.craftProfile.motorSpoolDownSeconds = 0.085F;
+            this.workingConfig.craftProfile.forwardDrag = 0.035F;
+            this.workingConfig.craftProfile.sideDrag = 0.160F;
+            this.workingConfig.craftProfile.verticalDrag = 0.080F;
+            this.workingConfig.craftProfile.rollResponseSeconds = 0.045F;
+            this.workingConfig.craftProfile.pitchResponseSeconds = 0.048F;
+            this.workingConfig.craftProfile.yawResponseSeconds = 0.075F;
+            this.saveAndRebuild();
+        }).bounds(right, this.height - 60, 165, 20).build());
+    }
+
+    private void buildRealismPage() {
+        final int centerX = this.width / 2;
+        final int left = centerX - 160;
+        final int mid = centerX - 52;
+        final int right = centerX + 56;
+        int y = 58;
+
+        this.addFieldLabel(left, y - 11, "Battery Sag");
+        this.addFieldLabel(mid, y - 11, "Max Sag Loss");
+        this.addFieldLabel(right, y - 11, "Sag Recovery (s)");
+        this.addFloatField(left, y, 90, this.workingConfig.realismProfile.batterySagStrength, value -> this.workingConfig.realismProfile.batterySagStrength = value);
+        this.addFloatField(mid, y, 90, this.workingConfig.realismProfile.batterySagMaxLoss, value -> this.workingConfig.realismProfile.batterySagMaxLoss = value);
+        this.addFloatField(right, y, 90, this.workingConfig.realismProfile.sagRecoverySeconds, value -> this.workingConfig.realismProfile.sagRecoverySeconds = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Descent Wash");
+        this.addFieldLabel(mid, y - 11, "Load Imperfection");
+        this.addFieldLabel(right, y - 11, "Safety Debug");
+        this.addFloatField(left, y, 90, this.workingConfig.realismProfile.descentWashStrength, value -> this.workingConfig.realismProfile.descentWashStrength = value);
+        this.addFloatField(mid, y, 90, this.workingConfig.realismProfile.loadImperfectionStrength, value -> this.workingConfig.realismProfile.loadImperfectionStrength = value);
+        this.safetyDebugButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.realismProfile.showNetworkSafetyDebugLine = !this.workingConfig.realismProfile.showNetworkSafetyDebugLine;
+            this.saveAndRefresh();
+        }).bounds(right, y, 110, 20).build());
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Glance Speed (m/s)");
+        this.addFieldLabel(mid, y - 11, "Crash Speed (m/s)");
+        this.addFieldLabel(right, y - 11, "Crash Energy");
+        this.addFloatField(left, y, 90, this.workingConfig.crashSettings.lowSpeedGlanceThreshold, value -> this.workingConfig.crashSettings.lowSpeedGlanceThreshold = value);
+        this.addFloatField(mid, y, 90, this.workingConfig.crashSettings.hardImpactSpeedThreshold, value -> this.workingConfig.crashSettings.hardImpactSpeedThreshold = value);
+        this.addFloatField(right, y, 90, this.workingConfig.crashSettings.hardImpactEnergyThreshold, value -> this.workingConfig.crashSettings.hardImpactEnergyThreshold = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Crash Reset Mode");
+        this.crashModeButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.crashSettings.crashResetMode = nextCrashMode(this.workingConfig.crashSettings.crashResetMode);
+            this.saveAndRefresh();
+        }).bounds(left, y, 256, 20).build());
+    }
+
+    private void switchPage(final int delta) {
+        final int nextOrdinal = Mth.clamp(this.page.ordinal() + delta, 0, Page.values().length - 1);
+        this.page = Page.values()[nextOrdinal];
+        this.captureTarget = CaptureTarget.NONE;
+        this.buttonCaptureSnapshot = null;
+        this.axisCalibrationSession = null;
+        this.rebuildPageWidgets();
     }
 
     @Override
@@ -125,17 +347,14 @@ public final class DroneSetupScreen extends Screen {
         }
 
         final Integer capture = FpvFreecam.INPUT_MAPPER.detectPressedButton(this.workingConfig, this.buttonCaptureSnapshot);
-
         if (capture == null) {
             return;
         }
 
         switch (this.captureTarget) {
-            case TOGGLE_BUTTON -> this.workingConfig.toggleButton = capture;
-            case EXIT_BUTTON -> this.workingConfig.exitButton = capture;
-            case THROTTLE_AXIS, YAW_AXIS, PITCH_AXIS, ROLL_AXIS -> {
-            }
-            case NONE -> {
+            case TOGGLE_BUTTON -> this.workingConfig.controller.toggleButton = capture;
+            case EXIT_BUTTON -> this.workingConfig.controller.exitButton = capture;
+            case THROTTLE_AXIS, YAW_AXIS, PITCH_AXIS, ROLL_AXIS, NONE -> {
             }
         }
 
@@ -145,18 +364,12 @@ public final class DroneSetupScreen extends Screen {
     }
 
     @Override
-    public void onClose() {
-        this.saveConfig();
-        this.minecraft.setScreen(this.parent);
-    }
-
-    @Override
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
         if (this.captureTarget != CaptureTarget.NONE && keyCode == 256) {
             this.captureTarget = CaptureTarget.NONE;
             this.buttonCaptureSnapshot = null;
             this.axisCalibrationSession = null;
-            this.refreshLabels();
+            this.refreshPageLabels();
             return true;
         }
 
@@ -164,40 +377,130 @@ public final class DroneSetupScreen extends Screen {
     }
 
     @Override
-    public void render(final GuiGraphics guiGraphics, final int mouseX, final int mouseY, final float partialTick) {
-        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
-
-        final int centerX = this.width / 2;
-        guiGraphics.drawCenteredString(this.font, this.title, centerX, 15, 0xFFFFFF);
-        guiGraphics.drawString(this.font, Component.translatable("screen.fpvfreecam.controller"), centerX - 155, 31, LABEL_COLOR);
-        guiGraphics.drawString(this.font, Component.translatable("screen.fpvfreecam.bindings"), centerX - 155, 59, LABEL_COLOR);
-        guiGraphics.drawString(this.font, Component.translatable("screen.fpvfreecam.axes"), centerX - 155, 87, LABEL_COLOR);
-        guiGraphics.drawString(this.font, Component.translatable("screen.fpvfreecam.left_stick"), centerX - 155, 101, LABEL_COLOR);
-        guiGraphics.drawString(this.font, Component.translatable("screen.fpvfreecam.right_stick"), centerX - 155, 139, LABEL_COLOR);
-        guiGraphics.drawString(this.font, Component.translatable("screen.fpvfreecam.deadzone"), centerX - 155, 175, LABEL_COLOR);
-
-        if (this.captureTarget != CaptureTarget.NONE) {
-            final Component prompt = this.captureTarget.isAxis() && this.axisCalibrationSession != null
-                    ? Component.literal("Move " + DroneInputMapper.axisName(this.axisCalibrationSession.axis()) + " to min and max")
-                    : Component.translatable(this.captureTarget.promptKey());
-            guiGraphics.drawCenteredString(this.font, prompt, centerX, this.height - 50, 0xFFD37F);
-        } else {
-            final List<DroneInputMapper.ControllerInfo> controllers = FpvFreecam.INPUT_MAPPER.getAvailableControllers();
-            final String status = controllers.isEmpty()
-                    ? "No controllers detected"
-                    : controllers.size() + " controller(s) detected";
-            guiGraphics.drawCenteredString(this.font, Component.literal(status), centerX, this.height - 50, 0xA0A0A0);
-        }
-
-        this.renderDiagnostics(guiGraphics, centerX - 155, 205);
+    public void onClose() {
+        this.saveConfig();
+        this.minecraft.setScreen(this.parent);
     }
 
-    private void handleDeadzoneEdited(final String value) {
-        try {
-            this.workingConfig.deadzone = Float.parseFloat(value);
-            this.saveConfig();
-        } catch (final NumberFormatException ignored) {
+    private void saveAndRefresh() {
+        this.saveConfig();
+        this.refreshPageLabels();
+    }
+
+    private void saveAndRebuild() {
+        this.saveConfig();
+        this.rebuildPageWidgets();
+    }
+
+    private void saveConfig() {
+        FpvFreecam.CONFIG.copyFrom(this.workingConfig);
+        FpvFreecam.CONFIG.save();
+    }
+
+    private void refreshPageLabels() {
+        if (this.page == Page.CONTROLLER) {
+            this.refreshControllerLabels();
+            return;
+        }
+
+        if (this.page == Page.REALISM_CRASH) {
+            if (this.crashModeButton != null) {
+                this.crashModeButton.setMessage(Component.literal("Crash Mode: " + this.workingConfig.crashSettings.crashResetMode.name()));
+            }
+            if (this.safetyDebugButton != null) {
+                this.safetyDebugButton.setMessage(Component.literal(this.workingConfig.realismProfile.showNetworkSafetyDebugLine ? "Debug Line: On" : "Debug Line: Off"));
+            }
+        }
+    }
+
+    private void refreshControllerLabels() {
+        if (this.controllerButton == null) {
+            return;
+        }
+
+        final DroneInputMapper.ControllerInfo controller = FpvFreecam.INPUT_MAPPER.resolveConfiguredController(this.workingConfig);
+        final String controllerLabel = controller == null
+                ? "Controller: None"
+                : "Controller: " + controller.displayName();
+        this.controllerButton.setMessage(Component.literal(controllerLabel));
+
+        this.toggleButton.setMessage(bindingMessage("Toggle", DroneInputMapper.buttonName(this.workingConfig.controller.toggleButton), CaptureTarget.TOGGLE_BUTTON));
+        this.exitButton.setMessage(bindingMessage("Exit", DroneInputMapper.buttonName(this.workingConfig.controller.exitButton), CaptureTarget.EXIT_BUTTON));
+        this.throttleAxisButton.setMessage(bindingMessage("Throttle", DroneInputMapper.axisName(this.workingConfig.controller.axisThrottle), CaptureTarget.THROTTLE_AXIS));
+        this.yawAxisButton.setMessage(bindingMessage("Yaw", DroneInputMapper.axisName(this.workingConfig.controller.axisYaw), CaptureTarget.YAW_AXIS));
+        this.pitchAxisButton.setMessage(bindingMessage("Pitch", DroneInputMapper.axisName(this.workingConfig.controller.axisPitch), CaptureTarget.PITCH_AXIS));
+        this.rollAxisButton.setMessage(bindingMessage("Roll", DroneInputMapper.axisName(this.workingConfig.controller.axisRoll), CaptureTarget.ROLL_AXIS));
+        this.throttleInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.controller.invertThrottle)));
+        this.yawInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.controller.invertYaw)));
+        this.pitchInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.controller.invertPitch)));
+        this.rollInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.controller.invertRoll)));
+        this.inFlightTiltAdjustButton.setMessage(Component.literal(
+                this.workingConfig.controller.allowInFlightCameraAngleAdjust ? "In-flight Cam Adjust: On" : "In-flight Cam Adjust: Off"
+        ));
+    }
+
+    private Component bindingMessage(final String label, final String value, final CaptureTarget target) {
+        if (this.captureTarget == target) {
+            if (this.axisCalibrationSession != null && this.captureTarget.isAxis()) {
+                return Component.literal(label + ": " + DroneInputMapper.axisName(this.axisCalibrationSession.axis()) + " [" + this.axisCalibrationSession.progressLabel() + "]");
+            }
+            return Component.literal(label + ": ...");
+        }
+        return Component.literal(label + ": " + value);
+    }
+
+    private void tickAxisCapture(final long now) {
+        if (this.axisCalibrationSession == null) {
+            final Integer axis = FpvFreecam.INPUT_MAPPER.detectMovedAxis(this.workingConfig, this.buttonCaptureSnapshot);
+            if (axis == null) {
+                return;
+            }
+
+            final float value = FpvFreecam.INPUT_MAPPER.readRawAxis(this.workingConfig, axis);
+            this.axisCalibrationSession = new AxisCalibrationSession(axis, now, value);
+            this.refreshPageLabels();
+            return;
+        }
+
+        final float value = FpvFreecam.INPUT_MAPPER.readRawAxis(this.workingConfig, this.axisCalibrationSession.axis());
+        this.axisCalibrationSession.include(value);
+        if (now - this.axisCalibrationSession.startTime() < AXIS_CALIBRATION_MS
+                || this.axisCalibrationSession.range() < AXIS_CALIBRATION_RANGE_MIN) {
+            this.refreshPageLabels();
+            return;
+        }
+
+        this.applyAxisCapture(this.captureTarget, this.axisCalibrationSession.axis(), this.axisCalibrationSession.min(), this.axisCalibrationSession.max());
+        this.captureTarget = CaptureTarget.NONE;
+        this.buttonCaptureSnapshot = null;
+        this.axisCalibrationSession = null;
+        this.saveAndRefresh();
+    }
+
+    private void applyAxisCapture(final CaptureTarget target, final int axis, final float min, final float max) {
+        switch (target) {
+            case THROTTLE_AXIS -> {
+                this.workingConfig.controller.axisThrottle = axis;
+                this.workingConfig.controller.axisThrottleMin = min;
+                this.workingConfig.controller.axisThrottleMax = max;
+            }
+            case YAW_AXIS -> {
+                this.workingConfig.controller.axisYaw = axis;
+                this.workingConfig.controller.axisYawMin = min;
+                this.workingConfig.controller.axisYawMax = max;
+            }
+            case PITCH_AXIS -> {
+                this.workingConfig.controller.axisPitch = axis;
+                this.workingConfig.controller.axisPitchMin = min;
+                this.workingConfig.controller.axisPitchMax = max;
+            }
+            case ROLL_AXIS -> {
+                this.workingConfig.controller.axisRoll = axis;
+                this.workingConfig.controller.axisRollMin = min;
+                this.workingConfig.controller.axisRollMax = max;
+            }
+            case NONE, TOGGLE_BUTTON, EXIT_BUTTON -> {
+            }
         }
     }
 
@@ -223,7 +526,6 @@ public final class DroneSetupScreen extends Screen {
                 }
             }
         }
-
         return -1;
     }
 
@@ -235,7 +537,7 @@ public final class DroneSetupScreen extends Screen {
         this.captureTarget = captureTarget;
         this.buttonCaptureSnapshot = FpvFreecam.INPUT_MAPPER.createButtonCaptureSnapshot(this.workingConfig);
         this.captureStartTime = System.currentTimeMillis();
-        this.refreshLabels();
+        this.refreshPageLabels();
     }
 
     private void startAxisCapture(final CaptureTarget captureTarget) {
@@ -247,7 +549,7 @@ public final class DroneSetupScreen extends Screen {
         this.buttonCaptureSnapshot = FpvFreecam.INPUT_MAPPER.createButtonCaptureSnapshot(this.workingConfig);
         this.axisCalibrationSession = null;
         this.captureStartTime = System.currentTimeMillis();
-        this.refreshLabels();
+        this.refreshPageLabels();
     }
 
     private boolean ensureControllerSelected() {
@@ -266,251 +568,68 @@ public final class DroneSetupScreen extends Screen {
         return true;
     }
 
-    private void saveAndRefresh() {
-        this.saveConfig();
-        this.refreshLabels();
+    private EditBox addFloatField(final int x, final int y, final int width, final float initialValue, final FloatSetter setter) {
+        final EditBox box = this.addPageWidget(new EditBox(this.font, x, y, width, 20, Component.empty()));
+        box.setValue(String.format("%.3f", initialValue));
+        box.setResponder(value -> {
+            try {
+                setter.set(Float.parseFloat(value));
+                this.saveConfig();
+            } catch (final NumberFormatException ignored) {
+            }
+        });
+        return box;
     }
 
-    private void saveConfig() {
-        FpvFreecam.CONFIG.controllerGuid = this.workingConfig.controllerGuid;
-        FpvFreecam.CONFIG.controllerName = this.workingConfig.controllerName;
-        FpvFreecam.CONFIG.toggleButton = this.workingConfig.toggleButton;
-        FpvFreecam.CONFIG.exitButton = this.workingConfig.exitButton;
-        FpvFreecam.CONFIG.axisThrottle = this.workingConfig.axisThrottle;
-        FpvFreecam.CONFIG.axisYaw = this.workingConfig.axisYaw;
-        FpvFreecam.CONFIG.axisPitch = this.workingConfig.axisPitch;
-        FpvFreecam.CONFIG.axisRoll = this.workingConfig.axisRoll;
-        FpvFreecam.CONFIG.axisThrottleMin = this.workingConfig.axisThrottleMin;
-        FpvFreecam.CONFIG.axisThrottleMax = this.workingConfig.axisThrottleMax;
-        FpvFreecam.CONFIG.axisYawMin = this.workingConfig.axisYawMin;
-        FpvFreecam.CONFIG.axisYawMax = this.workingConfig.axisYawMax;
-        FpvFreecam.CONFIG.axisPitchMin = this.workingConfig.axisPitchMin;
-        FpvFreecam.CONFIG.axisPitchMax = this.workingConfig.axisPitchMax;
-        FpvFreecam.CONFIG.axisRollMin = this.workingConfig.axisRollMin;
-        FpvFreecam.CONFIG.axisRollMax = this.workingConfig.axisRollMax;
-        FpvFreecam.CONFIG.invertThrottle = this.workingConfig.invertThrottle;
-        FpvFreecam.CONFIG.invertYaw = this.workingConfig.invertYaw;
-        FpvFreecam.CONFIG.invertPitch = this.workingConfig.invertPitch;
-        FpvFreecam.CONFIG.invertRoll = this.workingConfig.invertRoll;
-        FpvFreecam.CONFIG.deadzone = this.workingConfig.deadzone;
-        FpvFreecam.CONFIG.save();
+    private void addFieldLabel(final int x, final int y, final String text) {
+        final StringWidget label = this.addPageWidget(new StringWidget(x, y, 120, 9, Component.literal(text), this.font));
+        label.setAlpha(0.85F);
     }
 
-    private void refreshLabels() {
-        if (this.controllerButton == null) {
-            return;
-        }
-
-        final DroneInputMapper.ControllerInfo controller = FpvFreecam.INPUT_MAPPER.resolveConfiguredController(this.workingConfig);
-        final String controllerLabel = controller == null
-                ? "Controller: None"
-                : "Controller: " + controller.displayName();
-        this.controllerButton.setMessage(Component.literal(controllerLabel));
-
-        this.toggleButton.setMessage(bindingMessage("Toggle", DroneInputMapper.buttonName(this.workingConfig.toggleButton), CaptureTarget.TOGGLE_BUTTON));
-        this.exitButton.setMessage(bindingMessage("Exit", DroneInputMapper.buttonName(this.workingConfig.exitButton), CaptureTarget.EXIT_BUTTON));
-
-        this.throttleAxisButton.setMessage(bindingMessage("Throttle", DroneInputMapper.axisName(this.workingConfig.axisThrottle), CaptureTarget.THROTTLE_AXIS));
-        this.yawAxisButton.setMessage(bindingMessage("Yaw", DroneInputMapper.axisName(this.workingConfig.axisYaw), CaptureTarget.YAW_AXIS));
-        this.pitchAxisButton.setMessage(bindingMessage("Pitch", DroneInputMapper.axisName(this.workingConfig.axisPitch), CaptureTarget.PITCH_AXIS));
-        this.rollAxisButton.setMessage(bindingMessage("Roll", DroneInputMapper.axisName(this.workingConfig.axisRoll), CaptureTarget.ROLL_AXIS));
-
-        this.throttleInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.invertThrottle)));
-        this.yawInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.invertYaw)));
-        this.pitchInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.invertPitch)));
-        this.rollInvertButton.setMessage(Component.literal(invertLabel(this.workingConfig.invertRoll)));
-    }
-
-    private Component bindingMessage(final String label, final String value, final CaptureTarget target) {
-        if (this.captureTarget == target) {
-            if (this.axisCalibrationSession != null && this.captureTarget.isAxis()) {
-                return Component.literal(label + ": " + DroneInputMapper.axisName(this.axisCalibrationSession.axis()) + " [" + this.axisCalibrationSession.progressLabel() + "]");
-            }
-            return Component.literal(label + ": ...");
-        }
-        return Component.literal(label + ": " + value);
-    }
-
-    private void tickAxisCapture(final long now) {
-        if (this.axisCalibrationSession == null) {
-            final Integer axis = FpvFreecam.INPUT_MAPPER.detectMovedAxis(this.workingConfig, this.buttonCaptureSnapshot);
-            if (axis == null) {
-                return;
-            }
-
-            final float value = FpvFreecam.INPUT_MAPPER.readRawAxis(this.workingConfig, axis);
-            this.axisCalibrationSession = new AxisCalibrationSession(axis, now, value);
-            this.refreshLabels();
-            return;
-        }
-
-        final float value = FpvFreecam.INPUT_MAPPER.readRawAxis(this.workingConfig, this.axisCalibrationSession.axis());
-        this.axisCalibrationSession.include(value);
-        if (now - this.axisCalibrationSession.startTime() < AXIS_CALIBRATION_MS
-                || this.axisCalibrationSession.range() < AXIS_CALIBRATION_RANGE_MIN) {
-            this.refreshLabels();
-            return;
-        }
-
-        this.applyAxisCapture(this.captureTarget, this.axisCalibrationSession.axis(), this.axisCalibrationSession.min(), this.axisCalibrationSession.max());
-        this.captureTarget = CaptureTarget.NONE;
-        this.buttonCaptureSnapshot = null;
-        this.axisCalibrationSession = null;
-        this.saveAndRefresh();
-    }
-
-    private void applyAxisCapture(final CaptureTarget target, final int axis, final float min, final float max) {
-        switch (target) {
-            case THROTTLE_AXIS -> {
-                this.workingConfig.axisThrottle = axis;
-                this.workingConfig.axisThrottleMin = min;
-                this.workingConfig.axisThrottleMax = max;
-            }
-            case YAW_AXIS -> {
-                this.workingConfig.axisYaw = axis;
-                this.workingConfig.axisYawMin = min;
-                this.workingConfig.axisYawMax = max;
-            }
-            case PITCH_AXIS -> {
-                this.workingConfig.axisPitch = axis;
-                this.workingConfig.axisPitchMin = min;
-                this.workingConfig.axisPitchMax = max;
-            }
-            case ROLL_AXIS -> {
-                this.workingConfig.axisRoll = axis;
-                this.workingConfig.axisRollMin = min;
-                this.workingConfig.axisRollMax = max;
-            }
-            case NONE, TOGGLE_BUTTON, EXIT_BUTTON -> {
-            }
-        }
-    }
-
-    private void renderDiagnostics(final GuiGraphics guiGraphics, final int left, final int top) {
-        final DroneInputMapper.RawInputSnapshot snapshot = FpvFreecam.INPUT_MAPPER.snapshotRawInputs(this.workingConfig);
-        guiGraphics.drawString(this.font, Component.literal("Diagnostics"), left, top, LABEL_COLOR);
-
-        int y = top + this.font.lineHeight + 2;
-        final List<String> lines = this.buildDiagnosticsLines(snapshot);
-        final int maxY = this.height - 38;
-        for (final String line : lines) {
-            if (y > maxY) {
-                guiGraphics.drawString(this.font, Component.literal("..."), left, y, 0xA0A0A0);
-                break;
-            }
-
-            guiGraphics.drawString(this.font, Component.literal(line), left, y, 0xA0A0A0);
-            y += this.font.lineHeight + 1;
-        }
-    }
-
-    private List<String> buildDiagnosticsLines(final @Nullable DroneInputMapper.RawInputSnapshot snapshot) {
-        final List<String> lines = new ArrayList<>();
-        if (snapshot == null) {
-            lines.add("No live controller snapshot");
-            return lines;
-        }
-
-        lines.add("Selected: " + snapshot.controller().displayName() + " [J" + (snapshot.controller().joystickId() + 1) + "]");
-        lines.add("Mapped: " + (snapshot.controller().gamepadMapped() ? "GLFW gamepad" : "raw joystick only"));
-        lines.add("Raw axes (" + snapshot.rawAxes().length + ")");
-        appendAxes(lines, snapshot.rawAxes(), 4);
-        lines.add("Raw buttons (" + snapshot.rawButtons().length + ")");
-        appendButtons(lines, snapshot.rawButtons(), 12, "B");
-        lines.add("Raw hats (" + snapshot.rawHats().length + ")");
-        appendHats(lines, snapshot.rawHats(), 8);
-
-        if (snapshot.controller().gamepadMapped()) {
-            lines.add("Mapped axes (" + snapshot.mappedAxes().length + ")");
-            appendAxes(lines, snapshot.mappedAxes(), 4);
-            lines.add("Mapped buttons (" + snapshot.mappedButtons().length + ")");
-            appendButtons(lines, snapshot.mappedButtons(), 12, "G");
-        }
-
-        return lines;
-    }
-
-    private static void appendAxes(final List<String> lines, final float[] axes, final int perLine) {
-        if (axes.length == 0) {
-            lines.add("none");
-            return;
-        }
-
-        for (int index = 0; index < axes.length; index += perLine) {
-            final StringBuilder builder = new StringBuilder();
-            for (int offset = 0; offset < perLine && index + offset < axes.length; offset++) {
-                final int axis = index + offset;
-                if (builder.length() > 0) {
-                    builder.append("  ");
-                }
-                builder.append(String.format("A%02d:%+.2f", axis, axes[axis]));
-            }
-            lines.add(builder.toString());
-        }
-    }
-
-    private static void appendButtons(final List<String> lines, final byte[] buttons, final int perLine, final String prefix) {
-        if (buttons.length == 0) {
-            lines.add("none");
-            return;
-        }
-
-        for (int index = 0; index < buttons.length; index += perLine) {
-            final StringBuilder builder = new StringBuilder();
-            for (int offset = 0; offset < perLine && index + offset < buttons.length; offset++) {
-                final int button = index + offset;
-                if (builder.length() > 0) {
-                    builder.append(' ');
-                }
-                builder.append(String.format("%s%02d:%d", prefix, button, buttons[button] == 0 ? 0 : 1));
-            }
-            lines.add(builder.toString());
-        }
-    }
-
-    private static void appendHats(final List<String> lines, final byte[] hats, final int perLine) {
-        if (hats.length == 0) {
-            lines.add("none");
-            return;
-        }
-
-        for (int index = 0; index < hats.length; index += perLine) {
-            final StringBuilder builder = new StringBuilder();
-            for (int offset = 0; offset < perLine && index + offset < hats.length; offset++) {
-                final int hat = index + offset;
-                if (builder.length() > 0) {
-                    builder.append("  ");
-                }
-                builder.append("H").append(hat).append(':').append(formatHat(hats[hat]));
-            }
-            lines.add(builder.toString());
-        }
-    }
-
-    private static String formatHat(final byte hat) {
-        final int value = hat & 0xFF;
-        if (value == GLFW.GLFW_HAT_CENTERED) {
-            return "C";
-        }
-
-        final StringBuilder builder = new StringBuilder();
-        if ((value & GLFW.GLFW_HAT_UP) != 0) {
-            builder.append('U');
-        }
-        if ((value & GLFW.GLFW_HAT_RIGHT) != 0) {
-            builder.append('R');
-        }
-        if ((value & GLFW.GLFW_HAT_DOWN) != 0) {
-            builder.append('D');
-        }
-        if ((value & GLFW.GLFW_HAT_LEFT) != 0) {
-            builder.append('L');
-        }
-        return builder.isEmpty() ? Integer.toHexString(value) : builder.toString();
+    private <T extends AbstractWidget> T addPageWidget(final T widget) {
+        this.pageWidgets.add(widget);
+        return this.addRenderableWidget(widget);
     }
 
     private static String invertLabel(final boolean inverted) {
         return inverted ? "Invert: On" : "Invert: Off";
+    }
+
+    private static DroneConfig.CrashResetMode nextCrashMode(final DroneConfig.CrashResetMode current) {
+        final DroneConfig.CrashResetMode[] modes = DroneConfig.CrashResetMode.values();
+        return modes[(current.ordinal() + 1) % modes.length];
+    }
+
+    private void applyRealisticFiveInchPreset() {
+        DroneProfileDefaults.applyFiveInchFreestyle(this.workingConfig);
+        this.workingConfig.controller.axisThrottle = org.lwjgl.glfw.GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y;
+        this.workingConfig.controller.axisYaw = org.lwjgl.glfw.GLFW.GLFW_GAMEPAD_AXIS_LEFT_X;
+        this.workingConfig.controller.axisPitch = org.lwjgl.glfw.GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y;
+        this.workingConfig.controller.axisRoll = org.lwjgl.glfw.GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X;
+        this.workingConfig.controller.invertThrottle = true;
+        this.workingConfig.controller.invertYaw = false;
+        this.workingConfig.controller.invertPitch = true;
+        this.workingConfig.controller.invertRoll = false;
+        this.workingConfig.controller.deadzone = 0.08F;
+    }
+
+    private interface FloatSetter {
+        void set(float value);
+    }
+
+    private enum Page {
+        CONTROLLER("Controller", "Bind controller buttons/axes and deadzone."),
+        RATES("Rates", "Tune RC rate / super rate / expo and verify max deg/s."),
+        CRAFT("Craft", "Tune camera angle, throttle curve, drag, and response times."),
+        REALISM_CRASH("Realism & Crash", "Tune sag/wash and crash reset behavior.");
+
+        private final String title;
+        private final String helpText;
+
+        Page(final String title, final String helpText) {
+            this.title = title;
+            this.helpText = helpText;
+        }
     }
 
     private enum CaptureTarget {

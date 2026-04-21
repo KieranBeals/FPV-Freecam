@@ -8,6 +8,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ViewportEvent;
+import net.neoforged.neoforge.event.GameShuttingDownEvent;
 
 public final class FpvFreecamClientEvents {
     private FpvFreecamClientEvents() {
@@ -21,12 +22,9 @@ public final class FpvFreecamClientEvents {
     }
 
     public static void onComputeCameraAngles(final ViewportEvent.ComputeCameraAngles event) {
-        final Minecraft minecraft = Minecraft.getInstance();
         if (FpvFreecam.LIFECYCLE == null || FpvFreecam.FLIGHT_CONTROLLER == null) {
             return;
         }
-
-        FpvFreecam.LIFECYCLE.onFrameUpdate(minecraft);
 
         if (FpvFreecam.FLIGHT_CONTROLLER.isActive()) {
             final DroneCameraAngles angles = FpvFreecam.FLIGHT_CONTROLLER.getCameraAngles();
@@ -44,13 +42,23 @@ public final class FpvFreecamClientEvents {
         final Minecraft minecraft = Minecraft.getInstance();
         final String overlayText = FpvFreecam.LIFECYCLE.getOverlayText();
         if (!overlayText.isEmpty()) {
-            final int x = minecraft.getWindow().getGuiScaledWidth() - minecraft.font.width(overlayText) - 6;
-            final int y = 6;
-            event.getGuiGraphics().drawString(minecraft.font, Component.literal(overlayText), x, y, 0xFFFFFF, true);
+            final String[] lines = overlayText.split("\\n");
+            int y = 6;
+            for (final String line : lines) {
+                final int x = minecraft.getWindow().getGuiScaledWidth() - minecraft.font.width(line) - 6;
+                event.getGuiGraphics().drawString(minecraft.font, Component.literal(line), x, y, 0xFFFFFF, true);
+                y += minecraft.font.lineHeight + 2;
+            }
         }
     }
 
     public static void onClientLogout(final ClientPlayerNetworkEvent.LoggingOut event) {
+        if (FpvFreecam.LIFECYCLE != null) {
+            FpvFreecam.LIFECYCLE.onLogout();
+        }
+    }
+
+    public static void onGameShuttingDown(final GameShuttingDownEvent event) {
         if (FpvFreecam.LIFECYCLE != null) {
             FpvFreecam.LIFECYCLE.onLogout();
         }

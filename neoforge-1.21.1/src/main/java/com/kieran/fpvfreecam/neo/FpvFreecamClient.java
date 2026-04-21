@@ -19,6 +19,7 @@ public final class FpvFreecamClient {
         NeoForge.EVENT_BUS.addListener(FpvFreecamClientEvents::onComputeCameraAngles);
         NeoForge.EVENT_BUS.addListener(FpvFreecamClientEvents::onRenderGuiPost);
         NeoForge.EVENT_BUS.addListener(FpvFreecamClientEvents::onClientLogout);
+        NeoForge.EVENT_BUS.addListener(FpvFreecamClientEvents::onGameShuttingDown);
 
         container.registerExtensionPoint(IConfigScreenFactory.class, (minecraft, parent) -> new DroneSetupScreen(parent));
     }

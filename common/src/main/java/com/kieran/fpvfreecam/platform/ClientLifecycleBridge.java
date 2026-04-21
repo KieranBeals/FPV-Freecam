@@ -1,6 +1,8 @@
 package com.kieran.fpvfreecam.platform;
 
+import com.kieran.fpvfreecam.FpvFreecam;
 import com.kieran.fpvfreecam.flight.DroneFlightController;
+import com.kieran.fpvfreecam.flight.DroneNetworkSafetyGuard;
 import net.minecraft.client.Minecraft;
 
 public final class ClientLifecycleBridge {
@@ -23,15 +25,31 @@ public final class ClientLifecycleBridge {
     }
 
     public String getOverlayText() {
-        if (!this.flightController.isActive()) {
+        final DroneFlightController.HudSnapshot snapshot = this.flightController.getHudSnapshot();
+        if (snapshot == null) {
             return "";
         }
 
-        final String controllerName = this.flightController.getActiveControllerName();
-        final int roundedTilt = Math.round(this.flightController.getCameraPitch());
-        final String tiltText = "Tilt: " + roundedTilt + " deg";
-        return controllerName == null || controllerName.isBlank()
-                ? "Drone Active | " + tiltText
-                : "Drone Active - " + controllerName + " | " + tiltText;
+        final String controllerName = snapshot.controllerName() == null || snapshot.controllerName().isBlank()
+                ? "Controller: unknown"
+                : "Controller: " + snapshot.controllerName();
+        final String base = String.format(
+                "%s | Cam %.0f deg | Speed %.1f m/s | Thr %.0f%% | Sag %.0f%% | %s | R %.0f P %.0f Y %.0f deg/s",
+                controllerName,
+                snapshot.cameraAngleDeg(),
+                snapshot.speedMps(),
+                snapshot.throttlePercent(),
+                snapshot.sagPercent(),
+                snapshot.crashed() ? "Crashed" : (snapshot.armed() ? "Armed" : "Disarmed"),
+                snapshot.rollRateDegPerSecond(),
+                snapshot.pitchRateDegPerSecond(),
+                snapshot.yawRateDegPerSecond()
+        );
+
+        if (FpvFreecam.CONFIG != null && FpvFreecam.CONFIG.realismProfile.showNetworkSafetyDebugLine) {
+            return base + "\n" + DroneNetworkSafetyGuard.DEBUG_LINE_CLIENT_ONLY
+                    + "\n" + DroneNetworkSafetyGuard.DEBUG_LINE_NO_PACKETS;
+        }
+        return base;
     }
 }

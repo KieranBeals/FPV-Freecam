@@ -1,19 +1,22 @@
-100% client side fpv sim that you can use on any server that allows Freecam.
+100% client-side FPV freecam simulation tuned as a 5-inch freestyle quad.
 
-Note: It is not very accurate to real life currently but is good enough.
+No drone packets are sent. The drone state does not move any server-authoritative entity.
+This is intended for servers that already allow freecam-style detached camera behavior.
+It is not an anti-cheat bypass.
 
 ## Features
-- Client-side only drone camera mode
-- Gamepad button and axis binding screen
-- Axis calibration and invert options
-- Adjustable controller deadzone
-- Adjustable camera tilt with arrow keys (up and down)
+- Client-only fixed-step FPV simulation (`240 Hz`) with acro-only rates
+- Betaflight-style `RC rate / super rate / expo`
+- Throttle curve, motor lag, anisotropic drag, battery sag, and descent wash
+- Crash model with `EXIT_TO_PLAYER`, `QUICK_REARM`, and `CHECKPOINT_RESPAWN`
+- Four setup pages: `Controller`, `Rates`, `Craft`, `Realism & Crash`
+- Axis/button capture, calibration, invert options, and deadzone tuning
+- In-flight camera angle adjustment (optional)
 
 ## In-Game Setup
-1. Open the setup screen by going through the mod menu and finding this mod.
-2. Select your controller.
-3. Bind the `Toggle` and `Exit` buttons.
-4. Bind the `Throttle`, `Yaw`, `Pitch`, and `Roll` axes by moving each stick when prompted.
-5. Flip invert options if your controls feel backwards.
-6. Adjust deadzone if the sticks drift.
-7. Save and test the camera in game.
+1. Open the setup screen from Mod Menu.
+2. `Controller` page: select controller, bind `Toggle/Exit`, bind axes, set deadzone/invert.
+3. `Rates` page: tune roll/pitch/yaw `RC/super/expo`.
+4. `Craft` page: tune camera angle, throttle curve, thrust, drag, and response.
+5. `Realism & Crash` page: tune sag/wash and choose crash reset mode.
+6. Activate FPV with your configured toggle button.

@@ -31,8 +31,12 @@ public abstract class GuiMixin {
 
         ci.cancel();
         graphics.nextStratum();
-        final int x = graphics.guiWidth() - this.minecraft.font.width(overlayText) - 6;
-        final int y = 6;
-        graphics.text(this.minecraft.font, overlayText, x, y, 0xFFFFFFFF, true);
+        final String[] lines = overlayText.split("\\n");
+        int y = 6;
+        for (final String line : lines) {
+            final int x = graphics.guiWidth() - this.minecraft.font.width(line) - 6;
+            graphics.text(this.minecraft.font, line, x, y, 0xFFFFFFFF, true);
+            y += this.minecraft.font.lineHeight + 2;
+        }
     }
 }
