@@ -7,7 +7,7 @@ pluginManagement {
     }
 }
 
-rootProject.name = "client-drone-cam"
+rootProject.name = "FPV Freecam"
 
 include("common")
 include("neoforge-1.21.1")
