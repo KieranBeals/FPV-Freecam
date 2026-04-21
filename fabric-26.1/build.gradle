@@ -59,7 +59,8 @@ processResources {
             mod_license           : project.mod_license,
             minecraft_version     : project.fabric_minecraft_version,
             fabric_loader_version : project.fabric_loader_version,
-            fabric_api_version    : project.fabric_api_version
+            fabric_api_version    : project.fabric_api_version,
+            modmenu_version       : project.modmenu_version
     ]
 
     inputs.properties(expandProps)
