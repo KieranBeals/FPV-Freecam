@@ -31,7 +31,7 @@ loom {
 
     runConfigs.configureEach {
         ideConfigGenerated = true
-        runDir = "../runs/${it.name}"
+        runDir = "../runs/${project.name}/${it.name}"
     }
 }
 

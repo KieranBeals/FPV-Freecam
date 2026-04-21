@@ -1,0 +1,85 @@
+plugins {
+    id 'java-library'
+    id 'net.fabricmc.fabric-loom-remap' version "${fabric_1_21_11_loom_version}"
+}
+
+base {
+    archivesName = "${project.mod_id}-fabric-${project.fabric_1_21_11_minecraft_version}"
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(project.fabric_1_21_11_java_version as int)
+    withSourcesJar()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir project(':common').file('src/main/java')
+            srcDir project(':fabric-26.1').file('src/main/java')
+            exclude 'com/kieran/fpvfreecam/mixin/client/CameraMixin.java'
+            exclude 'com/kieran/fpvfreecam/mixin/client/GuiMixin.java'
+        }
+
+        resources {
+            srcDir 'src/main/resources'
+            srcDir project(':common').file('src/main/resources')
+            srcDir project(':fabric-26.1').file('src/main/resources')
+        }
+    }
+}
+
+loom {
+    mods {
+        "${project.mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+
+    runConfigs.configureEach {
+        ideConfigGenerated = true
+        runDir = "../runs/${project.name}/${it.name}"
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.fabric_1_21_11_minecraft_version}"
+    mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_1_21_11_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_1_21_11_api_version}"
+    modImplementation "com.terraformersmc:modmenu:${project.fabric_1_21_11_modmenu_version}"
+
+    compileOnly "org.spongepowered:mixin:0.8.5"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = project.fabric_1_21_11_java_version as int
+}
+
+tasks.withType(Jar).configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+processResources {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    def expandProps = [
+            version               : project.version,
+            mod_id                : project.mod_id,
+            mod_name              : project.mod_name,
+            mod_authors           : project.mod_authors,
+            mod_description       : project.mod_description,
+            mod_license           : project.mod_license,
+            minecraft_version     : project.fabric_1_21_11_minecraft_version,
+            fabric_loader_version : project.fabric_1_21_11_loader_version,
+            fabric_api_version    : project.fabric_1_21_11_api_version,
+            modmenu_version       : project.fabric_1_21_11_modmenu_version
+    ]
+
+    inputs.properties(expandProps)
+
+    filesMatching(['fabric.mod.json', 'pack.mcmeta']) {
+        expand expandProps
+    }
+}

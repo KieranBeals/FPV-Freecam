@@ -15,11 +15,17 @@ public final class FpvFreecamClientEvents {
 
     public static void onClientTickPost(final ClientTickEvent.Post event) {
         final Minecraft minecraft = Minecraft.getInstance();
-        FpvFreecam.LIFECYCLE.onClientTick(minecraft);
+        if (FpvFreecam.LIFECYCLE != null && FpvFreecam.FLIGHT_CONTROLLER != null) {
+            FpvFreecam.LIFECYCLE.onClientTick(minecraft);
+        }
     }
 
     public static void onComputeCameraAngles(final ViewportEvent.ComputeCameraAngles event) {
         final Minecraft minecraft = Minecraft.getInstance();
+        if (FpvFreecam.LIFECYCLE == null || FpvFreecam.FLIGHT_CONTROLLER == null) {
+            return;
+        }
+
         FpvFreecam.LIFECYCLE.onFrameUpdate(minecraft);
 
         if (FpvFreecam.FLIGHT_CONTROLLER.isActive()) {
@@ -31,6 +37,10 @@ public final class FpvFreecamClientEvents {
     }
 
     public static void onRenderGuiPost(final RenderGuiEvent.Post event) {
+        if (FpvFreecam.LIFECYCLE == null) {
+            return;
+        }
+
         final Minecraft minecraft = Minecraft.getInstance();
         final String overlayText = FpvFreecam.LIFECYCLE.getOverlayText();
         if (!overlayText.isEmpty()) {
@@ -41,6 +51,8 @@ public final class FpvFreecamClientEvents {
     }
 
     public static void onClientLogout(final ClientPlayerNetworkEvent.LoggingOut event) {
-        FpvFreecam.LIFECYCLE.onLogout();
+        if (FpvFreecam.LIFECYCLE != null) {
+            FpvFreecam.LIFECYCLE.onLogout();
+        }
     }
 }

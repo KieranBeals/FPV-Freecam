@@ -12,3 +12,4 @@ rootProject.name = "fpv-freecam"
 include("common")
 include("neoforge-1.21.1")
 include("fabric-26.1")
+include("fabric-1.21.11")

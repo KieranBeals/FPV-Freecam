@@ -14,10 +14,16 @@ allprojects {
     }
 }
 
-tasks.register('runFabricClient') {
+tasks.register('runFabric26_1Client') {
     group = 'run'
     description = 'Runs the Fabric 26.1 client.'
     dependsOn(':fabric-26.1:runClient')
+}
+
+tasks.register('runFabric1_21_11Client') {
+    group = 'run'
+    description = 'Runs the Fabric 1.21.11 client.'
+    dependsOn(':fabric-1.21.11:runClient')
 }
 
 tasks.register('runNeoForgeClient') {

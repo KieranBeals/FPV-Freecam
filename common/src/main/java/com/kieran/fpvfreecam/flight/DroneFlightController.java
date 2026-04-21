@@ -78,7 +78,7 @@ public final class DroneFlightController {
         }
 
         final long window = windowHandle(minecraft);
-        final boolean escapeDown = GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
+        final boolean escapeDown = window != 0L && GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
         if (this.state.isActive() && escapeDown && !this.state.escapeDown()) {
             this.forceDeactivate("escape");
             this.state.setEscapeDown(true);
