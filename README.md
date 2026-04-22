@@ -17,6 +17,6 @@ It is not an anti-cheat bypass.
 1. Open the setup screen from Mod Menu.
 2. `Controller` page: select controller, bind `Toggle/Exit`, bind axes, set deadzone/invert.
 3. `Rates` page: tune roll/pitch/yaw `RC/super/expo`.
-4. `Craft` page: tune camera angle, throttle curve, thrust, drag, and response.
+4. `Craft` page: tune camera angle, throttle curve, thrust, drag, and response; `Mass` changes rotational/translational inertia and adds a small high-speed float offset.
 5. `Realism & Crash` page: tune sag/wash and choose crash reset mode.
 6. Activate FPV with your configured toggle button.

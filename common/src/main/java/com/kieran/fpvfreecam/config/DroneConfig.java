@@ -385,6 +385,7 @@ public final class DroneConfig {
     public static final class CraftProfile {
         public float cameraAngleDeg = DroneProfileDefaults.CAMERA_ANGLE_DEG;
         public float thrustToWeight = DroneProfileDefaults.THRUST_TO_WEIGHT;
+        public float massKg = DroneProfileDefaults.DRONE_MASS_KG;
         public float motorSpoolUpSeconds = DroneProfileDefaults.MOTOR_SPOOL_UP_SECONDS;
         public float motorSpoolDownSeconds = DroneProfileDefaults.MOTOR_SPOOL_DOWN_SECONDS;
         public float rollResponseSeconds = DroneProfileDefaults.ROLL_RESPONSE_SECONDS;
@@ -405,6 +406,7 @@ public final class DroneConfig {
             final CraftProfile copy = new CraftProfile();
             copy.cameraAngleDeg = this.cameraAngleDeg;
             copy.thrustToWeight = this.thrustToWeight;
+            copy.massKg = this.massKg;
             copy.motorSpoolUpSeconds = this.motorSpoolUpSeconds;
             copy.motorSpoolDownSeconds = this.motorSpoolDownSeconds;
             copy.rollResponseSeconds = this.rollResponseSeconds;
@@ -419,6 +421,7 @@ public final class DroneConfig {
         private void clamp() {
             this.cameraAngleDeg = Mth.clamp(this.cameraAngleDeg, -90.0F, 90.0F);
             this.thrustToWeight = Mth.clamp(this.thrustToWeight, 1.2F, 12.0F);
+            this.massKg = Mth.clamp(this.massKg, 0.10F, 3.0F);
             this.motorSpoolUpSeconds = Mth.clamp(this.motorSpoolUpSeconds, 0.005F, 0.6F);
             this.motorSpoolDownSeconds = Mth.clamp(this.motorSpoolDownSeconds, 0.005F, 0.8F);
             this.rollResponseSeconds = Mth.clamp(this.rollResponseSeconds, 0.010F, 0.250F);

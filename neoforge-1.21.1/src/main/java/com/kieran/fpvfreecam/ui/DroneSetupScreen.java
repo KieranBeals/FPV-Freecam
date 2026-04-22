@@ -80,16 +80,6 @@ public final class DroneSetupScreen extends Screen {
                 .bounds(centerX - 170, 14, 340, 20)
                 .build());
         pageLabel.active = false;
-        final Button pageHelpLabel = this.addPageWidget(Button.builder(Component.literal(this.page.helpText), button -> {
-        }).bounds(centerX - 170, this.height - 52, 340, 20).build());
-        pageHelpLabel.active = false;
-        final Button safetyLabel = this.addPageWidget(Button.builder(
-                        Component.literal("Client-side FPV freecam only. No FPV packets are sent."),
-                        button -> {
-                        })
-                .bounds(centerX - 170, this.height - 40, 340, 20)
-                .build());
-        safetyLabel.active = false;
 
         this.previousPageButton = this.addRenderableWidget(Button.builder(Component.literal("< Prev"), button -> this.switchPage(-1))
                 .bounds(centerX - 170, bottomY, 80, 20)
@@ -254,18 +244,23 @@ public final class DroneSetupScreen extends Screen {
         this.addFloatField(left + 196, y, 90, this.workingConfig.craftProfile.verticalDrag, value -> this.workingConfig.craftProfile.verticalDrag = value);
         y += 34;
 
-        this.addFieldLabel(left, y - 11, "Roll Response (s)");
-        this.addFieldLabel(left + 98, y - 11, "Pitch Response (s)");
-        this.addFieldLabel(left + 196, y - 11, "Yaw Response (s)");
-        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.rollResponseSeconds, value -> this.workingConfig.craftProfile.rollResponseSeconds = value);
-        this.addFloatField(left + 98, y, 90, this.workingConfig.craftProfile.pitchResponseSeconds, value -> this.workingConfig.craftProfile.pitchResponseSeconds = value);
-        this.addFloatField(left + 196, y, 90, this.workingConfig.craftProfile.yawResponseSeconds, value -> this.workingConfig.craftProfile.yawResponseSeconds = value);
+        this.addFieldLabel(left, y - 11, "Mass (kg)");
+        this.addFieldLabel(left + 98, y - 11, "Roll Response (s)");
+        this.addFieldLabel(left + 196, y - 11, "Pitch Response (s)");
+        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.massKg, value -> this.workingConfig.craftProfile.massKg = value);
+        this.addFloatField(left + 98, y, 90, this.workingConfig.craftProfile.rollResponseSeconds, value -> this.workingConfig.craftProfile.rollResponseSeconds = value);
+        this.addFloatField(left + 196, y, 90, this.workingConfig.craftProfile.pitchResponseSeconds, value -> this.workingConfig.craftProfile.pitchResponseSeconds = value);
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Yaw Response (s)");
+        this.addFloatField(left, y, 90, this.workingConfig.craftProfile.yawResponseSeconds, value -> this.workingConfig.craftProfile.yawResponseSeconds = value);
 
         this.addPageWidget(Button.builder(Component.literal("Reset 5-inch Defaults"), button -> {
             this.workingConfig.craftProfile.cameraAngleDeg = 28.0F;
             this.workingConfig.throttleProfile.throttleMid = 0.34F;
             this.workingConfig.throttleProfile.throttleExpo = 0.22F;
             this.workingConfig.craftProfile.thrustToWeight = 5.5F;
+            this.workingConfig.craftProfile.massKg = DroneProfileDefaults.DRONE_MASS_KG;
             this.workingConfig.craftProfile.motorSpoolUpSeconds = 0.060F;
             this.workingConfig.craftProfile.motorSpoolDownSeconds = 0.085F;
             this.workingConfig.craftProfile.forwardDrag = 0.035F;
@@ -618,17 +613,15 @@ public final class DroneSetupScreen extends Screen {
     }
 
     private enum Page {
-        CONTROLLER("Controller", "Bind controller buttons/axes and deadzone."),
-        RATES("Rates", "Tune RC rate / super rate / expo and verify max deg/s."),
-        CRAFT("Craft", "Tune camera angle, throttle curve, drag, and response times."),
-        REALISM_CRASH("Realism & Crash", "Tune sag/wash and crash reset behavior.");
+        CONTROLLER("Controller"),
+        RATES("Rates"),
+        CRAFT("Craft"),
+        REALISM_CRASH("Realism & Crash");
 
         private final String title;
-        private final String helpText;
 
-        Page(final String title, final String helpText) {
+        Page(final String title) {
             this.title = title;
-            this.helpText = helpText;
         }
     }
 

@@ -92,10 +92,11 @@ public final class DroneFlightController {
         if (!this.state.isActive()) {
             if (pollResult.connected() && pollResult.togglePressed() && minecraft.screen == null) {
                 final String controllerName = pollResult.controller() == null ? "" : pollResult.controller().displayName();
+                final float launchYaw = player.getYHeadRot();
                 this.state.activate(
                         player.getEyePosition(),
-                        player.getYRot(),
-                        player.getXRot(),
+                        launchYaw,
+                        0.0F,
                         player.level().dimension(),
                         controllerName,
                         this.config.craftProfile.cameraAngleDeg

@@ -22,6 +22,13 @@ public final class DronePhysicsModel {
     private static final float ROLL_MAX_ACCEL_DPS2 = DroneProfileDefaults.defaultMaxAxisAcceleration(DroneProfileDefaults.Axis.ROLL);
     private static final float PITCH_MAX_ACCEL_DPS2 = DroneProfileDefaults.defaultMaxAxisAcceleration(DroneProfileDefaults.Axis.PITCH);
     private static final float YAW_MAX_ACCEL_DPS2 = DroneProfileDefaults.defaultMaxAxisAcceleration(DroneProfileDefaults.Axis.YAW);
+    private static final float MIN_CRAFT_MASS_KG = 0.10F;
+    private static final float MAX_CRAFT_MASS_KG = 3.0F;
+    private static final float HORIZONTAL_SPEED_FOR_MOTION_LIFT = 20.0F;
+    private static final float BASE_MOTION_LIFT_FRACTION = 0.25F;
+    private static final float MAX_MOTION_LIFT_FRACTION = 0.30F;
+    private static final float MOTION_LIFT_MASS_SCALE_MIN = 0.35F;
+    private static final float MOTION_LIFT_MASS_SCALE_MAX = 1.2F;
 
     private final DroneRateModel rateModel;
     private final DroneCrashModel crashModel;
@@ -83,6 +90,8 @@ public final class DronePhysicsModel {
 
         final float authority = Math.max(AIR_MODE_AUTHORITY_FLOOR, motorThrottle)
                 * (1.0F - sagLoss * 0.60F);
+        final float massKg = Mth.clamp(config.craftProfile.massKg, MIN_CRAFT_MASS_KG, MAX_CRAFT_MASS_KG);
+        final float invMass = 1.0F / massKg;
 
         final float desiredRollRate = desiredRates.roll() * authority;
         final float desiredPitchRate = desiredRates.pitch() * authority;
@@ -90,28 +99,6 @@ public final class DronePhysicsModel {
         state.setDesiredRollRateDegPerSecond(desiredRollRate);
         state.setDesiredPitchRateDegPerSecond(desiredPitchRate);
         state.setDesiredYawRateDegPerSecond(desiredYawRate);
-
-        float rollRate = updateAxisRate(
-                state.rollRateDegPerSecond(),
-                desiredRollRate,
-                config.craftProfile.rollResponseSeconds,
-                ROLL_MAX_ACCEL_DPS2,
-                dt
-        );
-        float pitchRate = updateAxisRate(
-                state.pitchRateDegPerSecond(),
-                desiredPitchRate,
-                config.craftProfile.pitchResponseSeconds,
-                PITCH_MAX_ACCEL_DPS2,
-                dt
-        );
-        float yawRate = updateAxisRate(
-                state.yawRateDegPerSecond(),
-                desiredYawRate,
-                config.craftProfile.yawResponseSeconds,
-                YAW_MAX_ACCEL_DPS2,
-                dt
-        );
 
         final Vec3 right = state.rightVector();
         final Vec3 up = state.upVector();
@@ -124,6 +111,40 @@ public final class DronePhysicsModel {
                 forward,
                 motorThrottle,
                 config.realismProfile.descentWashStrength
+        );
+
+        final Vec3 wash = descentWash(state, right, forward, washFactor);
+        final float rightSpeed = (float) state.velocity().dot(right);
+        final float forwardSpeed = (float) state.velocity().dot(forward);
+        final float horizontalSpeed = (float) Math.sqrt(rightSpeed * rightSpeed + forwardSpeed * forwardSpeed);
+        final float massLiftScale = Mth.clamp(1.0F / massKg, MOTION_LIFT_MASS_SCALE_MIN, MOTION_LIFT_MASS_SCALE_MAX);
+        final float maxMotionLiftFraction = Mth.clamp(
+                BASE_MOTION_LIFT_FRACTION * massLiftScale,
+                0.0F,
+                MAX_MOTION_LIFT_FRACTION
+        );
+        final float motionLiftFraction = maxMotionLiftFraction * Mth.clamp(horizontalSpeed / HORIZONTAL_SPEED_FOR_MOTION_LIFT, 0.0F, 1.0F);
+
+        float rollRate = updateAxisRate(
+                state.rollRateDegPerSecond(),
+                desiredRollRate,
+                config.craftProfile.rollResponseSeconds,
+                ROLL_MAX_ACCEL_DPS2 * invMass,
+                dt
+        );
+        float pitchRate = updateAxisRate(
+                state.pitchRateDegPerSecond(),
+                desiredPitchRate,
+                config.craftProfile.pitchResponseSeconds,
+                PITCH_MAX_ACCEL_DPS2 * invMass,
+                dt
+        );
+        float yawRate = updateAxisRate(
+                state.yawRateDegPerSecond(),
+                desiredYawRate,
+                config.craftProfile.yawResponseSeconds,
+                YAW_MAX_ACCEL_DPS2 * invMass,
+                dt
         );
 
         final float trackingError = (float) Math.min(1.0D, (
@@ -158,9 +179,10 @@ public final class DronePhysicsModel {
 
         final Vec3 gravity = new Vec3(0.0D, -GRAVITY, 0.0D);
         final Vec3 drag = anisotropicDrag(state.velocity(), right, up, forward, config.craftProfile);
-        final Vec3 wash = descentWash(state, right, forward, washFactor);
+        final Vec3 motionLift = new Vec3(0.0D, GRAVITY * motionLiftFraction, 0.0D);
+        final Vec3 scaledWash = wash.scale(invMass);
 
-        final Vec3 totalAcceleration = thrust.add(gravity).add(drag).add(wash);
+        final Vec3 totalAcceleration = thrust.add(gravity).add(drag).add(scaledWash).add(motionLift);
         Vec3 velocity = state.velocity().add(totalAcceleration.scale(dt));
 
         final Vec3 attemptedMove = velocity.scale(dt);

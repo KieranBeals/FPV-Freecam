@@ -3,7 +3,8 @@ package com.kieran.fpvfreecam.flight;
 import com.kieran.fpvfreecam.config.DroneConfig;
 
 public final class DroneProfileDefaults {
-    public static final float CAMERA_ANGLE_DEG = 28.0F;
+    public static final float CAMERA_ANGLE_DEG = 30.0F;
+    public static final float DRONE_MASS_KG = 1.0F;
 
     public static final float ROLL_RC_RATE = 1.15F;
     public static final float ROLL_SUPER_RATE = 0.72F;
@@ -20,17 +21,17 @@ public final class DroneProfileDefaults {
     public static final float THROTTLE_MID = 0.34F;
     public static final float THROTTLE_EXPO = 0.22F;
 
-    public static final float THRUST_TO_WEIGHT = 5.5F;
-    public static final float MOTOR_SPOOL_UP_SECONDS = 0.060F;
-    public static final float MOTOR_SPOOL_DOWN_SECONDS = 0.085F;
+    public static final float THRUST_TO_WEIGHT = 6.2F;
+    public static final float MOTOR_SPOOL_UP_SECONDS = 0.055F;
+    public static final float MOTOR_SPOOL_DOWN_SECONDS = 0.080F;
 
-    public static final float ROLL_RESPONSE_SECONDS = 0.045F;
-    public static final float PITCH_RESPONSE_SECONDS = 0.048F;
-    public static final float YAW_RESPONSE_SECONDS = 0.075F;
+    public static final float ROLL_RESPONSE_SECONDS = 0.044F;
+    public static final float PITCH_RESPONSE_SECONDS = 0.047F;
+    public static final float YAW_RESPONSE_SECONDS = 0.070F;
 
-    public static final float FORWARD_DRAG = 0.035F;
-    public static final float SIDE_DRAG = 0.160F;
-    public static final float VERTICAL_DRAG = 0.080F;
+    public static final float FORWARD_DRAG = 0.034F;
+    public static final float SIDE_DRAG = 0.150F;
+    public static final float VERTICAL_DRAG = 0.072F;
 
     public static final float BATTERY_SAG_STRENGTH = 0.55F;
     public static final float BATTERY_SAG_MAX_LOSS = 0.12F;
@@ -77,6 +78,7 @@ public final class DroneProfileDefaults {
 
         config.craftProfile.cameraAngleDeg = CAMERA_ANGLE_DEG;
         config.craftProfile.thrustToWeight = THRUST_TO_WEIGHT;
+        config.craftProfile.massKg = DRONE_MASS_KG;
         config.craftProfile.motorSpoolUpSeconds = MOTOR_SPOOL_UP_SECONDS;
         config.craftProfile.motorSpoolDownSeconds = MOTOR_SPOOL_DOWN_SECONDS;
         config.craftProfile.rollResponseSeconds = ROLL_RESPONSE_SECONDS;

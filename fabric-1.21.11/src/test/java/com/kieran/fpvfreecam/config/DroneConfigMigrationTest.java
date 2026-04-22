@@ -44,6 +44,7 @@ class DroneConfigMigrationTest {
         assertEquals(1, config.controller.axisThrottle);
         assertEquals(0.2F, config.controller.deadzone, 1.0E-6F);
         assertEquals(32.5F, config.craftProfile.cameraAngleDeg, 1.0E-6F);
+        assertEquals(1.0F, config.craftProfile.massKg, 1.0E-6F);
         assertEquals(DroneConfig.SimulationMode.CLIENT_ONLY, config.simulationMode);
 
         final JsonObject saved = JsonParser.parseString(Files.readString(configFile)).getAsJsonObject();
@@ -75,7 +76,8 @@ class DroneConfigMigrationTest {
                   },
                   "craftProfile": {
                     "cameraAngleDeg": 150.0,
-                    "thrustToWeight": 0.5
+                    "thrustToWeight": 0.5,
+                    "massKg": 0.25
                   },
                   "realismProfile": {
                     "batterySagMaxLoss": 2.0
@@ -97,6 +99,7 @@ class DroneConfigMigrationTest {
         assertEquals(1.0F, config.throttleProfile.throttleExpo, 1.0E-6F);
         assertEquals(90.0F, config.craftProfile.cameraAngleDeg, 1.0E-6F);
         assertEquals(1.2F, config.craftProfile.thrustToWeight, 1.0E-6F);
+        assertEquals(0.25F, config.craftProfile.massKg, 1.0E-6F);
         assertEquals(0.35F, config.realismProfile.batterySagMaxLoss, 1.0E-6F);
         assertEquals(1.0F, config.crashSettings.hardImpactSpeedThreshold, 1.0E-6F);
     }
