@@ -4,6 +4,7 @@ import com.kieran.fpvfreecam.FpvFreecam;
 import com.kieran.fpvfreecam.flight.DroneFlightController;
 import com.kieran.fpvfreecam.flight.DroneNetworkSafetyGuard;
 import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.Nullable;
 
 public final class ClientLifecycleBridge {
     private final DroneFlightController flightController;
@@ -25,7 +26,7 @@ public final class ClientLifecycleBridge {
     }
 
     public String getOverlayText() {
-        final DroneFlightController.HudSnapshot snapshot = this.flightController.getHudSnapshot();
+        final DroneFlightController.HudSnapshot snapshot = this.getHudSnapshot();
         if (snapshot == null) {
             return "";
         }
@@ -51,5 +52,9 @@ public final class ClientLifecycleBridge {
                     + "\n" + DroneNetworkSafetyGuard.DEBUG_LINE_NO_PACKETS;
         }
         return base;
+    }
+
+    public @Nullable DroneFlightController.HudSnapshot getHudSnapshot() {
+        return this.flightController.getHudSnapshot();
     }
 }

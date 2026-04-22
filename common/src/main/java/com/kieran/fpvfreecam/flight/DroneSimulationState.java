@@ -31,6 +31,10 @@ public final class DroneSimulationState {
     private float filteredYaw;
     private float filteredPitch;
     private float filteredRoll;
+    private float inputThrottle;
+    private float inputYaw;
+    private float inputPitch;
+    private float inputRoll;
 
     private float rollRateDegPerSecond;
     private float pitchRateDegPerSecond;
@@ -119,6 +123,10 @@ public final class DroneSimulationState {
         this.filteredYaw = 0.0F;
         this.filteredPitch = 0.0F;
         this.filteredRoll = 0.0F;
+        this.inputThrottle = 0.0F;
+        this.inputYaw = 0.0F;
+        this.inputPitch = 0.0F;
+        this.inputRoll = 0.0F;
         this.rollRateDegPerSecond = 0.0F;
         this.pitchRateDegPerSecond = 0.0F;
         this.yawRateDegPerSecond = 0.0F;
@@ -139,6 +147,10 @@ public final class DroneSimulationState {
         this.filteredYaw = 0.0F;
         this.filteredPitch = 0.0F;
         this.filteredRoll = 0.0F;
+        this.inputThrottle = 0.0F;
+        this.inputYaw = 0.0F;
+        this.inputPitch = 0.0F;
+        this.inputRoll = 0.0F;
         this.rollRateDegPerSecond = 0.0F;
         this.pitchRateDegPerSecond = 0.0F;
         this.yawRateDegPerSecond = 0.0F;
@@ -178,6 +190,10 @@ public final class DroneSimulationState {
         this.filteredYaw = 0.0F;
         this.filteredPitch = 0.0F;
         this.filteredRoll = 0.0F;
+        this.inputThrottle = 0.0F;
+        this.inputYaw = 0.0F;
+        this.inputPitch = 0.0F;
+        this.inputRoll = 0.0F;
         this.lastImpactSpeed = 0.0F;
         this.lastImpactEnergy = 0.0F;
         this.checkpointAgeSeconds = 0.0D;
@@ -348,6 +364,29 @@ public final class DroneSimulationState {
 
     public void setFilteredRoll(final float filteredRoll) {
         this.filteredRoll = filteredRoll;
+    }
+
+    public void setInputAxes(final float throttle, final float yaw, final float pitch, final float roll) {
+        this.inputThrottle = Mth.clamp(throttle, -1.0F, 1.0F);
+        this.inputYaw = Mth.clamp(yaw, -1.0F, 1.0F);
+        this.inputPitch = Mth.clamp(pitch, -1.0F, 1.0F);
+        this.inputRoll = Mth.clamp(roll, -1.0F, 1.0F);
+    }
+
+    public float inputThrottle() {
+        return this.inputThrottle;
+    }
+
+    public float inputYaw() {
+        return this.inputYaw;
+    }
+
+    public float inputPitch() {
+        return this.inputPitch;
+    }
+
+    public float inputRoll() {
+        return this.inputRoll;
     }
 
     public float rollRateDegPerSecond() {

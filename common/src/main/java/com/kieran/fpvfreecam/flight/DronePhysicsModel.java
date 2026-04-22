@@ -85,7 +85,7 @@ public final class DronePhysicsModel {
                 config.rateProfile,
                 smoothedRoll,
                 -smoothedPitch,
-                smoothedYaw
+                -smoothedYaw
         );
 
         final float authority = Math.max(AIR_MODE_AUTHORITY_FLOOR, motorThrottle)

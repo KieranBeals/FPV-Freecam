@@ -70,6 +70,12 @@ public final class DroneFlightController {
         DroneNetworkSafetyGuard.enforceClientOnlyMode(this.config);
 
         final DroneInputMapper.PollResult pollResult = this.inputMapper.poll(this.config, this.state.previousButtons());
+        this.state.setInputAxes(
+                pollResult.throttle(),
+                pollResult.yaw(),
+                pollResult.pitch(),
+                pollResult.roll()
+        );
         if (this.state.isActive() && !pollResult.connected()) {
             this.forceDeactivate("controller_disconnect");
             return;
@@ -194,7 +200,11 @@ public final class DroneFlightController {
                 this.state.rollRateDegPerSecond(),
                 this.state.pitchRateDegPerSecond(),
                 this.state.yawRateDegPerSecond(),
-                this.state.lastImpactSpeed()
+                this.state.lastImpactSpeed(),
+                this.state.inputYaw(),
+                this.state.inputThrottle(),
+                this.state.inputRoll(),
+                this.state.inputPitch()
         );
     }
 
@@ -460,7 +470,11 @@ public final class DroneFlightController {
             float rollRateDegPerSecond,
             float pitchRateDegPerSecond,
             float yawRateDegPerSecond,
-            float impactSpeed
+            float impactSpeed,
+            float yawInput,
+            float throttleInput,
+            float rollInput,
+            float pitchInput
     ) {
     }
 }
