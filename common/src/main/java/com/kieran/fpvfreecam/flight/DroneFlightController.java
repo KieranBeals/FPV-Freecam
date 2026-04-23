@@ -19,6 +19,15 @@ public final class DroneFlightController {
     private static final int MAX_SUB_STEPS = 12;
     private static final double MAX_FRAME_SECONDS = 0.250D;
     private static final float KEY_CAMERA_ANGLE_RATE_DPS = 45.0F;
+    private static final String[][] MOVEMENT_KEY_NAMES = new String[][]{
+            {"keyUp", "upKey", "forwardKey"},
+            {"keyDown", "downKey", "backKey"},
+            {"keyLeft", "leftKey"},
+            {"keyRight", "rightKey"},
+            {"keyJump", "jumpKey"},
+            {"keyShift", "shiftKey"},
+            {"keySprint", "sprintKey"}
+    };
 
     private final DroneConfig config;
     private final DroneInputMapper inputMapper;
@@ -88,6 +97,9 @@ public final class DroneFlightController {
 
         final long window = windowHandle(minecraft);
         final boolean escapeDown = window != 0L && GLFW.glfwGetKey(window, GLFW.GLFW_KEY_ESCAPE) == GLFW.GLFW_PRESS;
+        final boolean[] movementDown = this.readMovementKeybindState(minecraft);
+        final boolean movementExitPressed = this.state.updateMovementExitEdge(movementDown);
+        final boolean damageEdge = this.state.updateDamageExitEdge(player.getHealth());
         if (this.state.isActive() && escapeDown && !this.state.escapeDown()) {
             this.forceDeactivate("escape");
             this.state.setEscapeDown(true);
@@ -96,7 +108,7 @@ public final class DroneFlightController {
         this.state.setEscapeDown(escapeDown);
 
         if (!this.state.isActive()) {
-            if (pollResult.connected() && pollResult.togglePressed() && minecraft.screen == null) {
+            if (pollResult.connected() && pollResult.armPressed() && minecraft.screen == null) {
                 final String controllerName = pollResult.controller() == null ? "" : pollResult.controller().displayName();
                 final float launchYaw = player.getYHeadRot();
                 this.state.activate(
@@ -105,7 +117,9 @@ public final class DroneFlightController {
                         0.0F,
                         player.level().dimension(),
                         controllerName,
-                        this.config.craftProfile.cameraAngleDeg
+                        this.config.craftProfile.cameraAngleDeg,
+                        player.getHealth(),
+                        movementDown
                 );
                 this.resetFrameTimer();
                 this.enableInactivityFpsOverride(minecraft);
@@ -115,8 +129,26 @@ public final class DroneFlightController {
             return;
         }
 
-        if (pollResult.togglePressed() || pollResult.exitPressed()) {
-            this.forceDeactivate("button_toggle");
+        if (pollResult.resetPressed()) {
+            this.forceDeactivate("button_reset");
+            return;
+        }
+        if (movementExitPressed) {
+            this.forceDeactivate("movement_keybind_exit");
+            return;
+        }
+        if (this.config.crashSettings.exitToPlayerOnDamage && damageEdge) {
+            this.forceDeactivate("damage_exit");
+            return;
+        }
+
+        if (pollResult.disarmPressed() && this.state.isArmed()) {
+            this.state.setArmed(false);
+        } else if (pollResult.armPressed() && !this.state.isArmed() && !this.state.isCrashed()) {
+            this.state.setArmed(true);
+        }
+
+        if (this.state.isCrashed()) {
             return;
         }
 
@@ -286,6 +318,54 @@ public final class DroneFlightController {
         } catch (final ReflectiveOperationException ignored) {
             return 0L;
         }
+    }
+
+    private boolean[] readMovementKeybindState(final Minecraft minecraft) {
+        final boolean[] down = new boolean[MOVEMENT_KEY_NAMES.length];
+        final Object options = minecraft.options;
+        for (int index = 0; index < MOVEMENT_KEY_NAMES.length; index++) {
+            down[index] = this.resolveKeyDown(options, MOVEMENT_KEY_NAMES[index]);
+        }
+        return down;
+    }
+
+    private boolean resolveKeyDown(final Object options, final String[] candidates) {
+        for (final String name : candidates) {
+            try {
+                final Field field = options.getClass().getDeclaredField(name);
+                field.setAccessible(true);
+                final Object keyMapping = field.get(options);
+                if (keyMapping != null) {
+                    return this.keyMappingIsDown(keyMapping);
+                }
+            } catch (final ReflectiveOperationException ignored) {
+            }
+        }
+        for (final String name : candidates) {
+            try {
+                final Method method = options.getClass().getMethod(name);
+                final Object keyMapping = method.invoke(options);
+                if (keyMapping != null) {
+                    return this.keyMappingIsDown(keyMapping);
+                }
+            } catch (final ReflectiveOperationException ignored) {
+            }
+        }
+        return false;
+    }
+
+    private boolean keyMappingIsDown(final Object keyMapping) {
+        for (final String methodName : new String[]{"isDown", "isPressed"}) {
+            try {
+                final Method method = keyMapping.getClass().getMethod(methodName);
+                final Object result = method.invoke(keyMapping);
+                if (result instanceof Boolean down) {
+                    return down;
+                }
+            } catch (final ReflectiveOperationException ignored) {
+            }
+        }
+        return false;
     }
 
     private void enableInactivityFpsOverride(final Minecraft minecraft) {

@@ -52,6 +52,8 @@ public final class DroneSimulationState {
     private @Nullable ResourceKey<Level> dimension;
     private String controllerName = "";
     private boolean escapeDown;
+    private final boolean[] movementKeyDown = new boolean[7];
+    private float lastTrackedHealth = -1.0F;
 
     private float lastImpactSpeed;
     private float lastImpactEnergy;
@@ -86,7 +88,9 @@ public final class DroneSimulationState {
             final float pitch,
             final ResourceKey<Level> dimension,
             final String controllerName,
-            final float cameraAngleDeg
+            final float cameraAngleDeg,
+            final float playerHealth,
+            final boolean[] movementKeysDown
     ) {
         this.active = true;
         this.armed = true;
@@ -94,6 +98,8 @@ public final class DroneSimulationState {
         this.dimension = dimension;
         this.controllerName = controllerName == null ? "" : controllerName;
         this.escapeDown = false;
+        this.setMovementKeysDown(movementKeysDown);
+        this.lastTrackedHealth = Math.max(0.0F, playerHealth);
         this.lastImpactSpeed = 0.0F;
         this.lastImpactEnergy = 0.0F;
         this.simTimeSeconds = 0.0D;
@@ -162,6 +168,8 @@ public final class DroneSimulationState {
         this.dimension = null;
         this.controllerName = "";
         this.escapeDown = false;
+        this.clearMovementKeys();
+        this.lastTrackedHealth = -1.0F;
         this.lastImpactSpeed = 0.0F;
         this.lastImpactEnergy = 0.0F;
         this.simTimeSeconds = 0.0D;
@@ -230,6 +238,14 @@ public final class DroneSimulationState {
     public void setCrashedState(final boolean crashed) {
         this.crashed = crashed;
         this.armed = !crashed;
+    }
+
+    public void setArmed(final boolean armed) {
+        if (this.crashed) {
+            this.armed = false;
+            return;
+        }
+        this.armed = armed;
     }
 
     public Vec3 position() {
@@ -477,6 +493,44 @@ public final class DroneSimulationState {
         this.escapeDown = escapeDown;
     }
 
+    public boolean updateMovementExitEdge(final boolean[] currentlyDown) {
+        boolean edgePressed = false;
+        final int limit = Math.min(this.movementKeyDown.length, currentlyDown.length);
+        for (int index = 0; index < limit; index++) {
+            final boolean pressed = currentlyDown[index];
+            if (pressed && !this.movementKeyDown[index]) {
+                edgePressed = true;
+            }
+            this.movementKeyDown[index] = pressed;
+        }
+        for (int index = limit; index < this.movementKeyDown.length; index++) {
+            this.movementKeyDown[index] = false;
+        }
+        return edgePressed;
+    }
+
+    public void setMovementKeysDown(final boolean[] currentlyDown) {
+        final int limit = Math.min(this.movementKeyDown.length, currentlyDown.length);
+        for (int index = 0; index < limit; index++) {
+            this.movementKeyDown[index] = currentlyDown[index];
+        }
+        for (int index = limit; index < this.movementKeyDown.length; index++) {
+            this.movementKeyDown[index] = false;
+        }
+    }
+
+    public boolean updateDamageExitEdge(final float currentHealth) {
+        final float clampedHealth = Math.max(0.0F, currentHealth);
+        if (this.lastTrackedHealth < 0.0F) {
+            this.lastTrackedHealth = clampedHealth;
+            return false;
+        }
+
+        final boolean dropped = clampedHealth + 1.0E-4F < this.lastTrackedHealth;
+        this.lastTrackedHealth = clampedHealth;
+        return dropped;
+    }
+
     public boolean[] previousButtons() {
         return this.previousButtons;
     }
@@ -484,6 +538,12 @@ public final class DroneSimulationState {
     public void clearButtons() {
         for (int index = 0; index < this.previousButtons.length; index++) {
             this.previousButtons[index] = false;
+        }
+    }
+
+    public void clearMovementKeys() {
+        for (int index = 0; index < this.movementKeyDown.length; index++) {
+            this.movementKeyDown[index] = false;
         }
     }
 

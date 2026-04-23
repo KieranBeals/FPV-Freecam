@@ -10,5 +10,9 @@
   "screen.fpvfreecam.deadzone": "Deadzone",
   "screen.fpvfreecam.done": "Done",
   "screen.fpvfreecam.capture_button": "Press a button, flip a switch, or Esc to cancel",
-  "screen.fpvfreecam.capture_axis": "Move the stick you want to bind, then sweep it to min and max, or Esc to cancel"
+  "screen.fpvfreecam.capture_axis": "Move the stick you want to bind, then sweep it to min and max, or Esc to cancel",
+  "screen.fpvfreecam.binding.arm": "Arm Binding",
+  "screen.fpvfreecam.binding.disarm": "Disarm Binding",
+  "screen.fpvfreecam.binding.reset": "Reset Binding",
+  "screen.fpvfreecam.exit_on_damage": "Exit To Player On Damage"
 }

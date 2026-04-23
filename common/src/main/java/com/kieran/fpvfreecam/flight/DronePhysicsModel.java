@@ -46,10 +46,16 @@ public final class DronePhysicsModel {
             final Level level,
             final double dt
     ) {
-        final float smoothedThrottle = smooth(state.filteredThrottle(), input.throttle(), dt, INPUT_SMOOTHING_SECONDS);
-        final float smoothedYaw = smooth(state.filteredYaw(), input.yaw(), dt, INPUT_SMOOTHING_SECONDS);
-        final float smoothedPitch = smooth(state.filteredPitch(), input.pitch(), dt, INPUT_SMOOTHING_SECONDS);
-        final float smoothedRoll = smooth(state.filteredRoll(), input.roll(), dt, INPUT_SMOOTHING_SECONDS);
+        final boolean armed = state.isArmed();
+        final float throttleTargetInput = armed ? input.throttle() : -1.0F;
+        final float yawTargetInput = armed ? input.yaw() : 0.0F;
+        final float pitchTargetInput = armed ? input.pitch() : 0.0F;
+        final float rollTargetInput = armed ? input.roll() : 0.0F;
+
+        final float smoothedThrottle = smooth(state.filteredThrottle(), throttleTargetInput, dt, INPUT_SMOOTHING_SECONDS);
+        final float smoothedYaw = smooth(state.filteredYaw(), yawTargetInput, dt, INPUT_SMOOTHING_SECONDS);
+        final float smoothedPitch = smooth(state.filteredPitch(), pitchTargetInput, dt, INPUT_SMOOTHING_SECONDS);
+        final float smoothedRoll = smooth(state.filteredRoll(), rollTargetInput, dt, INPUT_SMOOTHING_SECONDS);
 
         state.setFilteredThrottle(smoothedThrottle);
         state.setFilteredYaw(smoothedYaw);
@@ -57,7 +63,7 @@ public final class DronePhysicsModel {
         state.setFilteredRoll(smoothedRoll);
 
         final float throttleInput = (smoothedThrottle + 1.0F) * 0.5F;
-        final float throttleCurve = throttleCurve(throttleInput, config.throttleProfile);
+        final float throttleCurve = armed ? throttleCurve(throttleInput, config.throttleProfile) : 0.0F;
         final float motorThrottle = simulateMotorSpoolStep(
                 state.motorThrottle(),
                 throttleCurve,
@@ -81,12 +87,14 @@ public final class DronePhysicsModel {
         );
         state.setBatterySagLoss(sagLoss);
 
-        final DroneRateModel.AxisRates desiredRates = this.rateModel.desiredRatesDegPerSecond(
+        final DroneRateModel.AxisRates desiredRates = armed
+                ? this.rateModel.desiredRatesDegPerSecond(
                 config.rateProfile,
                 smoothedRoll,
                 -smoothedPitch,
                 -smoothedYaw
-        );
+        )
+                : new DroneRateModel.AxisRates(0.0F, 0.0F, 0.0F);
 
         final float authority = Math.max(AIR_MODE_AUTHORITY_FLOOR, motorThrottle)
                 * (1.0F - sagLoss * 0.60F);
@@ -125,47 +133,52 @@ public final class DronePhysicsModel {
         );
         final float motionLiftFraction = maxMotionLiftFraction * Mth.clamp(horizontalSpeed / HORIZONTAL_SPEED_FOR_MOTION_LIFT, 0.0F, 1.0F);
 
-        float rollRate = updateAxisRate(
-                state.rollRateDegPerSecond(),
-                desiredRollRate,
-                config.craftProfile.rollResponseSeconds,
-                ROLL_MAX_ACCEL_DPS2 * invMass,
-                dt
-        );
-        float pitchRate = updateAxisRate(
-                state.pitchRateDegPerSecond(),
-                desiredPitchRate,
-                config.craftProfile.pitchResponseSeconds,
-                PITCH_MAX_ACCEL_DPS2 * invMass,
-                dt
-        );
-        float yawRate = updateAxisRate(
-                state.yawRateDegPerSecond(),
-                desiredYawRate,
-                config.craftProfile.yawResponseSeconds,
-                YAW_MAX_ACCEL_DPS2 * invMass,
-                dt
-        );
+        float rollRate = state.rollRateDegPerSecond();
+        float pitchRate = state.pitchRateDegPerSecond();
+        float yawRate = state.yawRateDegPerSecond();
+        if (armed) {
+            rollRate = updateAxisRate(
+                    rollRate,
+                    desiredRollRate,
+                    config.craftProfile.rollResponseSeconds,
+                    ROLL_MAX_ACCEL_DPS2 * invMass,
+                    dt
+            );
+            pitchRate = updateAxisRate(
+                    pitchRate,
+                    desiredPitchRate,
+                    config.craftProfile.pitchResponseSeconds,
+                    PITCH_MAX_ACCEL_DPS2 * invMass,
+                    dt
+            );
+            yawRate = updateAxisRate(
+                    yawRate,
+                    desiredYawRate,
+                    config.craftProfile.yawResponseSeconds,
+                    YAW_MAX_ACCEL_DPS2 * invMass,
+                    dt
+            );
 
-        final float trackingError = (float) Math.min(1.0D, (
-                Math.abs(desiredRollRate - rollRate)
-                        + Math.abs(desiredPitchRate - pitchRate)
-                        + Math.abs(desiredYawRate - yawRate)
-        ) / 1100.0D);
-        final float dynamicImperfection = Mth.clamp(trackingError * 0.90F + (float) angularLoad * 0.20F - 0.16F, 0.0F, 1.0F);
-        final float imperfectionScale = config.realismProfile.loadImperfectionStrength
-                * dynamicImperfection
-                * (0.35F + motorThrottle * 0.65F);
+            final float trackingError = (float) Math.min(1.0D, (
+                    Math.abs(desiredRollRate - rollRate)
+                            + Math.abs(desiredPitchRate - pitchRate)
+                            + Math.abs(desiredYawRate - yawRate)
+            ) / 1100.0D);
+            final float dynamicImperfection = Mth.clamp(trackingError * 0.90F + (float) angularLoad * 0.20F - 0.16F, 0.0F, 1.0F);
+            final float imperfectionScale = config.realismProfile.loadImperfectionStrength
+                    * dynamicImperfection
+                    * (0.35F + motorThrottle * 0.65F);
 
-        final double simTime = state.simTimeSeconds();
-        rollRate += (float) Math.sin(simTime * 22.0D + 0.8D) * imperfectionScale * 5.5F;
-        pitchRate += (float) Math.sin(simTime * 19.0D + 1.7D) * imperfectionScale * 4.8F;
-        yawRate += (float) Math.sin(simTime * 15.0D + 2.1D) * imperfectionScale * 3.0F;
+            final double simTime = state.simTimeSeconds();
+            rollRate += (float) Math.sin(simTime * 22.0D + 0.8D) * imperfectionScale * 5.5F;
+            pitchRate += (float) Math.sin(simTime * 19.0D + 1.7D) * imperfectionScale * 4.8F;
+            yawRate += (float) Math.sin(simTime * 15.0D + 2.1D) * imperfectionScale * 3.0F;
 
-        final float washWobble = washFactor * (0.35F + config.realismProfile.loadImperfectionStrength * 0.65F);
-        rollRate += (float) Math.sin(simTime * 41.0D + 0.6D) * washWobble * 10.0F;
-        pitchRate += (float) Math.cos(simTime * 37.0D + 1.4D) * washWobble * 9.5F;
-        yawRate += (float) Math.sin(simTime * 29.0D + 2.0D) * washWobble * 5.5F;
+            final float washWobble = washFactor * (0.35F + config.realismProfile.loadImperfectionStrength * 0.65F);
+            rollRate += (float) Math.sin(simTime * 41.0D + 0.6D) * washWobble * 10.0F;
+            pitchRate += (float) Math.cos(simTime * 37.0D + 1.4D) * washWobble * 9.5F;
+            yawRate += (float) Math.sin(simTime * 29.0D + 2.0D) * washWobble * 5.5F;
+        }
 
         state.setRollRateDegPerSecond(rollRate);
         state.setPitchRateDegPerSecond(pitchRate);

@@ -15,7 +15,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DroneConfigMigrationTest {
     @Test
-    void migratesLegacyFlatConfigAndSavesGroupedSchema(@TempDir final Path tempDir) throws Exception {
+    void migratesLegacyGroupedSchemaV1ToV2(@TempDir final Path tempDir) throws Exception {
+        final Path configFile = tempDir.resolve("fpv-freecam.json");
+        Files.writeString(configFile, """
+                {
+                  "simulationMode": "CLIENT_ONLY",
+                  "controller": {
+                    "controllerGuid": "abc-guid",
+                    "controllerName": "RadioMaster",
+                    "toggleButton": 7,
+                    "exitButton": 6,
+                    "axisThrottle": 1,
+                    "axisYaw": 0,
+                    "axisPitch": 3,
+                    "axisRoll": 2,
+                    "axisThrottleMin": -0.8,
+                    "axisThrottleMax": 0.9,
+                    "invertThrottle": false,
+                    "deadzone": 0.2
+                  },
+                  "craftProfile": {
+                    "cameraAngleDeg": 32.5
+                  }
+                }
+                """);
+
+        final DroneConfig config = DroneConfig.load(configPaths(tempDir));
+
+        assertEquals(DroneConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion);
+        assertEquals("abc-guid", config.controller.controllerGuid);
+        assertEquals("RadioMaster", config.controller.controllerName);
+        assertEquals(7, config.controller.armButton);
+        assertEquals(6, config.controller.disarmButton);
+        assertEquals(-1, config.controller.resetButton);
+        assertEquals(1, config.controller.axisThrottle);
+        assertEquals(0.2F, config.controller.deadzone, 1.0E-6F);
+        assertEquals(32.5F, config.craftProfile.cameraAngleDeg, 1.0E-6F);
+        assertEquals(1.0F, config.craftProfile.massKg, 1.0E-6F);
+        assertEquals(DroneConfig.SimulationMode.CLIENT_ONLY, config.simulationMode);
+        assertTrue(config.crashSettings.exitToPlayerOnDamage);
+
+        final JsonObject saved = JsonParser.parseString(Files.readString(configFile)).getAsJsonObject();
+        assertEquals(DroneConfig.CURRENT_SCHEMA_VERSION, saved.get("schemaVersion").getAsInt());
+        assertTrue(saved.has("controller"));
+        assertTrue(saved.has("rateProfile"));
+        assertTrue(saved.has("craftProfile"));
+        assertFalse(saved.getAsJsonObject("controller").has("toggleButton"));
+        assertFalse(saved.getAsJsonObject("controller").has("exitButton"));
+    }
+
+    @Test
+    void migratesLegacyFlatConfigAndSavesSchemaV2(@TempDir final Path tempDir) throws Exception {
         final Path configFile = tempDir.resolve("fpv-freecam.json");
         Files.writeString(configFile, """
                 {
@@ -37,22 +87,10 @@ class DroneConfigMigrationTest {
 
         final DroneConfig config = DroneConfig.load(configPaths(tempDir));
 
-        assertEquals("abc-guid", config.controller.controllerGuid);
-        assertEquals("RadioMaster", config.controller.controllerName);
-        assertEquals(7, config.controller.toggleButton);
-        assertEquals(6, config.controller.exitButton);
-        assertEquals(1, config.controller.axisThrottle);
-        assertEquals(0.2F, config.controller.deadzone, 1.0E-6F);
-        assertEquals(32.5F, config.craftProfile.cameraAngleDeg, 1.0E-6F);
-        assertEquals(1.0F, config.craftProfile.massKg, 1.0E-6F);
-        assertEquals(DroneConfig.SimulationMode.CLIENT_ONLY, config.simulationMode);
-
-        final JsonObject saved = JsonParser.parseString(Files.readString(configFile)).getAsJsonObject();
-        assertTrue(saved.has("controller"));
-        assertTrue(saved.has("rateProfile"));
-        assertTrue(saved.has("craftProfile"));
-        assertFalse(saved.has("toggleButton"));
-        assertFalse(saved.has("controllerGuid"));
+        assertEquals(DroneConfig.CURRENT_SCHEMA_VERSION, config.schemaVersion);
+        assertEquals(7, config.controller.armButton);
+        assertEquals(6, config.controller.disarmButton);
+        assertEquals(-1, config.controller.resetButton);
     }
 
     @Test
@@ -83,7 +121,8 @@ class DroneConfigMigrationTest {
                     "batterySagMaxLoss": 2.0
                   },
                   "crashSettings": {
-                    "hardImpactSpeedThreshold": -1.0
+                    "hardImpactSpeedThreshold": -1.0,
+                    "exitToPlayerOnDamage": false
                   }
                 }
                 """);
@@ -102,6 +141,28 @@ class DroneConfigMigrationTest {
         assertEquals(0.25F, config.craftProfile.massKg, 1.0E-6F);
         assertEquals(0.35F, config.realismProfile.batterySagMaxLoss, 1.0E-6F);
         assertEquals(1.0F, config.crashSettings.hardImpactSpeedThreshold, 1.0E-6F);
+        assertFalse(config.crashSettings.exitToPlayerOnDamage);
+    }
+
+    @Test
+    void defaultsDamageExitToTrueWhenMissing(@TempDir final Path tempDir) throws Exception {
+        final Path configFile = tempDir.resolve("fpv-freecam.json");
+        Files.writeString(configFile, """
+                {
+                  "simulationMode": "CLIENT_ONLY",
+                  "controller": {
+                    "armButton": 7,
+                    "disarmButton": 6,
+                    "resetButton": -1
+                  },
+                  "crashSettings": {
+                    "hardImpactSpeedThreshold": 12.0
+                  }
+                }
+                """);
+
+        final DroneConfig config = DroneConfig.load(configPaths(tempDir));
+        assertTrue(config.crashSettings.exitToPlayerOnDamage);
     }
 
     private static ClientConfigPaths configPaths(final Path path) {

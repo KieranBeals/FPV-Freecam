@@ -36,8 +36,9 @@ public final class DroneSetupScreen extends Screen {
     private Button doneButton;
 
     private Button controllerButton;
-    private Button toggleButton;
-    private Button exitButton;
+    private Button armButton;
+    private Button disarmButton;
+    private Button resetButton;
     private Button throttleAxisButton;
     private Button yawAxisButton;
     private Button pitchAxisButton;
@@ -50,6 +51,7 @@ public final class DroneSetupScreen extends Screen {
 
     private Button crashModeButton;
     private Button safetyDebugButton;
+    private Button damageExitButton;
 
     private CaptureTarget captureTarget = CaptureTarget.NONE;
     private long captureStartTime;
@@ -106,7 +108,8 @@ public final class DroneSetupScreen extends Screen {
     private void buildControllerPage() {
         final int centerX = this.width / 2;
         final int left = centerX - 160;
-        final int right = centerX + 5;
+        final int middle = centerX - 52;
+        final int right = centerX + 56;
         int y = 48;
 
         this.controllerButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
@@ -115,20 +118,18 @@ public final class DroneSetupScreen extends Screen {
         }).bounds(left, y, 325, 20).build());
         y += 28;
 
-        this.addPageWidget(Button.builder(Component.literal("Apply 5in Realistic Preset"), button -> {
-            this.applyRealisticFiveInchPreset();
-            this.saveAndRebuild();
-        }).bounds(left, y, 325, 20).build());
-        y += 28;
-
-        this.toggleButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.TOGGLE_BUTTON))
-                .bounds(left, y, 160, 20)
+        this.armButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.ARM_BUTTON))
+                .bounds(left, y, 96, 20)
                 .build());
-        this.exitButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.EXIT_BUTTON))
-                .bounds(right, y, 160, 20)
+        this.disarmButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.DISARM_BUTTON))
+                .bounds(middle, y, 96, 20)
                 .build());
-        this.addFieldLabel(left, y - 11, "Toggle Binding");
-        this.addFieldLabel(right, y - 11, "Exit Binding");
+        this.resetButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startButtonCapture(CaptureTarget.RESET_BUTTON))
+                .bounds(right, y, 96, 20)
+                .build());
+        this.addFieldLabel(left, y - 11, "Arm Binding");
+        this.addFieldLabel(middle, y - 11, "Disarm Binding");
+        this.addFieldLabel(right, y - 11, "Reset Binding");
         y += 34;
 
         this.throttleAxisButton = this.addPageWidget(Button.builder(Component.empty(), button -> this.startAxisCapture(CaptureTarget.THROTTLE_AXIS))
@@ -312,6 +313,13 @@ public final class DroneSetupScreen extends Screen {
             this.workingConfig.crashSettings.crashResetMode = nextCrashMode(this.workingConfig.crashSettings.crashResetMode);
             this.saveAndRefresh();
         }).bounds(left, y, 256, 20).build());
+        y += 34;
+
+        this.addFieldLabel(left, y - 11, "Exit To Player On Damage");
+        this.damageExitButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
+            this.workingConfig.crashSettings.exitToPlayerOnDamage = !this.workingConfig.crashSettings.exitToPlayerOnDamage;
+            this.saveAndRefresh();
+        }).bounds(left, y, 256, 20).build());
     }
 
     private void switchPage(final int delta) {
@@ -347,8 +355,9 @@ public final class DroneSetupScreen extends Screen {
         }
 
         switch (this.captureTarget) {
-            case TOGGLE_BUTTON -> this.workingConfig.controller.toggleButton = capture;
-            case EXIT_BUTTON -> this.workingConfig.controller.exitButton = capture;
+            case ARM_BUTTON -> this.workingConfig.controller.armButton = capture;
+            case DISARM_BUTTON -> this.workingConfig.controller.disarmButton = capture;
+            case RESET_BUTTON -> this.workingConfig.controller.resetButton = capture;
             case THROTTLE_AXIS, YAW_AXIS, PITCH_AXIS, ROLL_AXIS, NONE -> {
             }
         }
@@ -405,6 +414,9 @@ public final class DroneSetupScreen extends Screen {
             if (this.safetyDebugButton != null) {
                 this.safetyDebugButton.setMessage(Component.literal(this.workingConfig.realismProfile.showNetworkSafetyDebugLine ? "Debug Line: On" : "Debug Line: Off"));
             }
+            if (this.damageExitButton != null) {
+                this.damageExitButton.setMessage(Component.literal(this.workingConfig.crashSettings.exitToPlayerOnDamage ? "Exit On Damage: On" : "Exit On Damage: Off"));
+            }
         }
     }
 
@@ -419,8 +431,9 @@ public final class DroneSetupScreen extends Screen {
                 : "Controller: " + controller.displayName();
         this.controllerButton.setMessage(Component.literal(controllerLabel));
 
-        this.toggleButton.setMessage(bindingMessage("Toggle", DroneInputMapper.buttonName(this.workingConfig.controller.toggleButton), CaptureTarget.TOGGLE_BUTTON));
-        this.exitButton.setMessage(bindingMessage("Exit", DroneInputMapper.buttonName(this.workingConfig.controller.exitButton), CaptureTarget.EXIT_BUTTON));
+        this.armButton.setMessage(bindingMessage("Arm", DroneInputMapper.buttonName(this.workingConfig.controller.armButton), CaptureTarget.ARM_BUTTON));
+        this.disarmButton.setMessage(bindingMessage("Disarm", DroneInputMapper.buttonName(this.workingConfig.controller.disarmButton), CaptureTarget.DISARM_BUTTON));
+        this.resetButton.setMessage(bindingMessage("Reset", buttonLabel(this.workingConfig.controller.resetButton), CaptureTarget.RESET_BUTTON));
         this.throttleAxisButton.setMessage(bindingMessage("Throttle", DroneInputMapper.axisName(this.workingConfig.controller.axisThrottle), CaptureTarget.THROTTLE_AXIS));
         this.yawAxisButton.setMessage(bindingMessage("Yaw", DroneInputMapper.axisName(this.workingConfig.controller.axisYaw), CaptureTarget.YAW_AXIS));
         this.pitchAxisButton.setMessage(bindingMessage("Pitch", DroneInputMapper.axisName(this.workingConfig.controller.axisPitch), CaptureTarget.PITCH_AXIS));
@@ -494,7 +507,7 @@ public final class DroneSetupScreen extends Screen {
                 this.workingConfig.controller.axisRollMin = min;
                 this.workingConfig.controller.axisRollMax = max;
             }
-            case NONE, TOGGLE_BUTTON, EXIT_BUTTON -> {
+            case NONE, ARM_BUTTON, DISARM_BUTTON, RESET_BUTTON -> {
             }
         }
     }
@@ -590,6 +603,13 @@ public final class DroneSetupScreen extends Screen {
         return inverted ? "Invert: On" : "Invert: Off";
     }
 
+    private static String buttonLabel(final int button) {
+        if (button < 0) {
+            return "Unbound";
+        }
+        return DroneInputMapper.buttonName(button);
+    }
+
     private static DroneConfig.CrashResetMode nextCrashMode(final DroneConfig.CrashResetMode current) {
         final DroneConfig.CrashResetMode[] modes = DroneConfig.CrashResetMode.values();
         return modes[(current.ordinal() + 1) % modes.length];
@@ -627,8 +647,9 @@ public final class DroneSetupScreen extends Screen {
 
     private enum CaptureTarget {
         NONE(false, ""),
-        TOGGLE_BUTTON(false, "screen.fpvfreecam.capture_button"),
-        EXIT_BUTTON(false, "screen.fpvfreecam.capture_button"),
+        ARM_BUTTON(false, "screen.fpvfreecam.capture_button"),
+        DISARM_BUTTON(false, "screen.fpvfreecam.capture_button"),
+        RESET_BUTTON(false, "screen.fpvfreecam.capture_button"),
         THROTTLE_AXIS(true, "screen.fpvfreecam.capture_axis"),
         YAW_AXIS(true, "screen.fpvfreecam.capture_axis"),
         PITCH_AXIS(true, "screen.fpvfreecam.capture_axis"),

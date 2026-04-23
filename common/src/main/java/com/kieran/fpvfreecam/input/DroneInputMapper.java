@@ -109,15 +109,17 @@ public final class DroneInputMapper {
                     return PollResult.disconnected();
                 }
 
-                final boolean togglePressed = this.edgePressed(gamepadState, previousButtons, config.controller.toggleButton);
-                final boolean exitPressed = this.edgePressed(gamepadState, previousButtons, config.controller.exitButton);
+                final boolean armPressed = this.edgePressed(gamepadState, previousButtons, config.controller.armButton);
+                final boolean disarmPressed = this.edgePressed(gamepadState, previousButtons, config.controller.disarmButton);
+                final boolean resetPressed = this.edgePressed(gamepadState, previousButtons, config.controller.resetButton);
                 captureButtons(previousButtons, gamepadState);
 
                 return new PollResult(
                         true,
                         controller,
-                        togglePressed,
-                        exitPressed,
+                        armPressed,
+                        disarmPressed,
+                        resetPressed,
                         this.readAxis(gamepadState, config.controller.axisThrottle, config.controller.axisThrottleMin, config.controller.axisThrottleMax, config.controller.deadzone, config.controller.invertThrottle),
                         this.readAxis(gamepadState, config.controller.axisYaw, config.controller.axisYawMin, config.controller.axisYawMax, config.controller.deadzone, config.controller.invertYaw),
                         this.readAxis(gamepadState, config.controller.axisPitch, config.controller.axisPitchMin, config.controller.axisPitchMax, config.controller.deadzone, config.controller.invertPitch),
@@ -133,15 +135,17 @@ public final class DroneInputMapper {
                 return PollResult.disconnected();
             }
 
-            final boolean togglePressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.toggleButton);
-            final boolean exitPressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.exitButton);
+            final boolean armPressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.armButton);
+            final boolean disarmPressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.disarmButton);
+            final boolean resetPressed = this.edgePressed(buttons, hats, axes, previousButtons, config.controller.resetButton);
             captureButtons(previousButtons, buttons, hats, axes);
 
             return new PollResult(
                     true,
                     controller,
-                    togglePressed,
-                    exitPressed,
+                    armPressed,
+                    disarmPressed,
+                    resetPressed,
                     this.readAxis(axes, config.controller.axisThrottle, config.controller.axisThrottleMin, config.controller.axisThrottleMax, config.controller.deadzone, config.controller.invertThrottle),
                     this.readAxis(axes, config.controller.axisYaw, config.controller.axisYawMin, config.controller.axisYawMax, config.controller.deadzone, config.controller.invertYaw),
                     this.readAxis(axes, config.controller.axisPitch, config.controller.axisPitchMin, config.controller.axisPitchMax, config.controller.deadzone, config.controller.invertPitch),
@@ -658,15 +662,16 @@ public final class DroneInputMapper {
     public record PollResult(
             boolean connected,
             @Nullable ControllerInfo controller,
-            boolean togglePressed,
-            boolean exitPressed,
+            boolean armPressed,
+            boolean disarmPressed,
+            boolean resetPressed,
             float throttle,
             float yaw,
             float pitch,
             float roll
     ) {
         public static PollResult disconnected() {
-            return new PollResult(false, null, false, false, 0.0F, 0.0F, 0.0F, 0.0F);
+            return new PollResult(false, null, false, false, false, 0.0F, 0.0F, 0.0F, 0.0F);
         }
     }
 }

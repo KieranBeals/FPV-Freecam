@@ -20,8 +20,11 @@ import java.nio.file.Path;
 public final class DroneConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String FILE_NAME = "fpv-freecam.json";
+    private static final int LEGACY_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
 
     private transient Path path;
+    public int schemaVersion = CURRENT_SCHEMA_VERSION;
 
     public SimulationMode simulationMode = SimulationMode.CLIENT_ONLY;
     public String clientOnlyNotice = "Client-side FPV freecam simulation only. No FPV packets are sent. Intended for servers that already allow freecam.";
@@ -54,17 +57,15 @@ public final class DroneConfig {
                 }
 
                 final JsonObject json = parsed.getAsJsonObject();
-                final boolean legacy = looksLegacy(json);
-                final DroneConfig config = legacy
-                        ? migrateLegacy(path, json)
-                        : parseGrouped(path, json);
+                final JsonObject migrated = migrateToCurrentSchema(json);
+                final DroneConfig config = parseGrouped(path, migrated);
                 if (config == null) {
                     return rewriteDefaults(path);
                 }
 
                 config.ensureDefaults();
                 config.clamp();
-                if (legacy) {
+                if (!json.equals(migrated)) {
                     config.save();
                 }
                 return config;
@@ -100,6 +101,7 @@ public final class DroneConfig {
 
     public DroneConfig copy() {
         final DroneConfig copy = new DroneConfig(this.path);
+        copy.schemaVersion = this.schemaVersion;
         copy.simulationMode = this.simulationMode;
         copy.clientOnlyNotice = this.clientOnlyNotice;
         copy.controller = this.controller.copy();
@@ -112,6 +114,7 @@ public final class DroneConfig {
     }
 
     public void copyFrom(final DroneConfig source) {
+        this.schemaVersion = source.schemaVersion;
         this.simulationMode = source.simulationMode;
         this.clientOnlyNotice = source.clientOnlyNotice;
         this.controller = source.controller.copy();
@@ -123,6 +126,7 @@ public final class DroneConfig {
     }
 
     private void ensureDefaults() {
+        this.schemaVersion = CURRENT_SCHEMA_VERSION;
         if (this.simulationMode == null) {
             this.simulationMode = SimulationMode.CLIENT_ONLY;
         }
@@ -150,6 +154,7 @@ public final class DroneConfig {
     }
 
     private void clamp() {
+        this.schemaVersion = CURRENT_SCHEMA_VERSION;
         this.simulationMode = SimulationMode.CLIENT_ONLY;
         this.controller.clamp();
         this.rateProfile.clamp();
@@ -169,7 +174,7 @@ public final class DroneConfig {
         return config;
     }
 
-    private static boolean looksLegacy(final JsonObject json) {
+    private static boolean looksLegacyFlat(final JsonObject json) {
         return json.has("toggleButton")
                 || json.has("controllerGuid")
                 || json.has("axisThrottle")
@@ -187,7 +192,7 @@ public final class DroneConfig {
         return parsed;
     }
 
-    private static DroneConfig migrateLegacy(final Path path, final JsonObject json) {
+    private static DroneConfig migrateLegacyFlat(final Path path, final JsonObject json) {
         final LegacyFlatConfig legacy = GSON.fromJson(json, LegacyFlatConfig.class);
         final DroneConfig config = defaults(path);
         if (legacy == null) {
@@ -196,8 +201,9 @@ public final class DroneConfig {
 
         config.controller.controllerGuid = safe(legacy.controllerGuid);
         config.controller.controllerName = safe(legacy.controllerName);
-        config.controller.toggleButton = legacy.toggleButton;
-        config.controller.exitButton = legacy.exitButton;
+        config.controller.armButton = legacy.toggleButton;
+        config.controller.disarmButton = legacy.exitButton;
+        config.controller.resetButton = -1;
         config.controller.axisThrottle = legacy.axisThrottle;
         config.controller.axisYaw = legacy.axisYaw;
         config.controller.axisPitch = legacy.axisPitch;
@@ -216,8 +222,89 @@ public final class DroneConfig {
         config.controller.invertRoll = legacy.invertRoll;
         config.controller.deadzone = legacy.deadzone;
         config.craftProfile.cameraAngleDeg = legacy.cameraPitch;
+        config.schemaVersion = LEGACY_SCHEMA_VERSION;
 
         return config;
+    }
+
+    private static JsonObject migrateToCurrentSchema(final JsonObject source) {
+        JsonObject working = source.deepCopy();
+        if (looksLegacyFlat(working)) {
+            final DroneConfig grouped = migrateLegacyFlat(Path.of(FILE_NAME), working);
+            working = GSON.toJsonTree(grouped).getAsJsonObject();
+            working.addProperty("schemaVersion", LEGACY_SCHEMA_VERSION);
+        }
+
+        int schemaVersion = resolveSchemaVersion(working);
+        while (schemaVersion < CURRENT_SCHEMA_VERSION) {
+            switch (schemaVersion) {
+                case 1 -> working = migrateV1ToV2(working);
+                default -> {
+                    schemaVersion = CURRENT_SCHEMA_VERSION;
+                    continue;
+                }
+            }
+            schemaVersion = resolveSchemaVersion(working);
+        }
+
+        working.addProperty("schemaVersion", CURRENT_SCHEMA_VERSION);
+        return working;
+    }
+
+    private static int resolveSchemaVersion(final JsonObject json) {
+        if (!json.has("schemaVersion") || !json.get("schemaVersion").isJsonPrimitive()) {
+            return LEGACY_SCHEMA_VERSION;
+        }
+
+        try {
+            return Math.max(LEGACY_SCHEMA_VERSION, json.get("schemaVersion").getAsInt());
+        } catch (final RuntimeException ignored) {
+            return LEGACY_SCHEMA_VERSION;
+        }
+    }
+
+    private static JsonObject migrateV1ToV2(final JsonObject source) {
+        final JsonObject migrated = source.deepCopy();
+        final JsonObject controller = migrated.has("controller") && migrated.get("controller").isJsonObject()
+                ? migrated.getAsJsonObject("controller")
+                : new JsonObject();
+        if (!migrated.has("controller") || !migrated.get("controller").isJsonObject()) {
+            migrated.add("controller", controller);
+        }
+
+        final int armButton = readInt(controller, "armButton", readInt(controller, "toggleButton", GLFW.GLFW_GAMEPAD_BUTTON_START));
+        final int disarmButton = readInt(controller, "disarmButton", readInt(controller, "exitButton", GLFW.GLFW_GAMEPAD_BUTTON_BACK));
+        controller.remove("toggleButton");
+        controller.remove("exitButton");
+        controller.addProperty("armButton", armButton);
+        controller.addProperty("disarmButton", disarmButton);
+        if (!controller.has("resetButton")) {
+            controller.addProperty("resetButton", -1);
+        }
+
+        final JsonObject crashSettings = migrated.has("crashSettings") && migrated.get("crashSettings").isJsonObject()
+                ? migrated.getAsJsonObject("crashSettings")
+                : new JsonObject();
+        if (!migrated.has("crashSettings") || !migrated.get("crashSettings").isJsonObject()) {
+            migrated.add("crashSettings", crashSettings);
+        }
+        if (!crashSettings.has("exitToPlayerOnDamage")) {
+            crashSettings.addProperty("exitToPlayerOnDamage", true);
+        }
+
+        migrated.addProperty("schemaVersion", 2);
+        return migrated;
+    }
+
+    private static int readInt(final JsonObject object, final String field, final int fallback) {
+        if (!object.has(field) || !object.get(field).isJsonPrimitive()) {
+            return fallback;
+        }
+        try {
+            return object.get(field).getAsInt();
+        } catch (final RuntimeException ignored) {
+            return fallback;
+        }
     }
 
     private static String safe(final String value) {
@@ -237,8 +324,9 @@ public final class DroneConfig {
     public static final class ControllerConfig {
         public String controllerGuid = "";
         public String controllerName = "";
-        public int toggleButton = GLFW.GLFW_GAMEPAD_BUTTON_START;
-        public int exitButton = GLFW.GLFW_GAMEPAD_BUTTON_BACK;
+        public int armButton = GLFW.GLFW_GAMEPAD_BUTTON_START;
+        public int disarmButton = GLFW.GLFW_GAMEPAD_BUTTON_BACK;
+        public int resetButton = -1;
         public int axisThrottle = GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y;
         public int axisYaw = GLFW.GLFW_GAMEPAD_AXIS_LEFT_X;
         public int axisPitch = GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y;
@@ -269,8 +357,9 @@ public final class DroneConfig {
             final ControllerConfig copy = new ControllerConfig();
             copy.controllerGuid = this.controllerGuid;
             copy.controllerName = this.controllerName;
-            copy.toggleButton = this.toggleButton;
-            copy.exitButton = this.exitButton;
+            copy.armButton = this.armButton;
+            copy.disarmButton = this.disarmButton;
+            copy.resetButton = this.resetButton;
             copy.axisThrottle = this.axisThrottle;
             copy.axisYaw = this.axisYaw;
             copy.axisPitch = this.axisPitch;
@@ -293,6 +382,9 @@ public final class DroneConfig {
         }
 
         private void clamp() {
+            this.armButton = Math.max(-1, this.armButton);
+            this.disarmButton = Math.max(-1, this.disarmButton);
+            this.resetButton = Math.max(-1, this.resetButton);
             this.deadzone = Mth.clamp(this.deadzone, 0.0F, 0.95F);
             if (this.axisThrottleMax <= this.axisThrottleMin) {
                 this.axisThrottleMin = -1.0F;
@@ -473,6 +565,7 @@ public final class DroneConfig {
         public float hardImpactSpeedThreshold = DroneProfileDefaults.HARD_IMPACT_SPEED;
         public float hardImpactEnergyThreshold = DroneProfileDefaults.HARD_IMPACT_ENERGY;
         public CrashResetMode crashResetMode = CrashResetMode.EXIT_TO_PLAYER;
+        public boolean exitToPlayerOnDamage = true;
 
         public CrashSettings() {
         }
@@ -487,6 +580,7 @@ public final class DroneConfig {
             copy.hardImpactSpeedThreshold = this.hardImpactSpeedThreshold;
             copy.hardImpactEnergyThreshold = this.hardImpactEnergyThreshold;
             copy.crashResetMode = this.crashResetMode;
+            copy.exitToPlayerOnDamage = this.exitToPlayerOnDamage;
             return copy;
         }
 
