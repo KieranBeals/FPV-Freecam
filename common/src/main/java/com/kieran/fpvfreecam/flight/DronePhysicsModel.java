@@ -46,6 +46,7 @@ public final class DronePhysicsModel {
             final Level level,
             final double dt
     ) {
+        final boolean noCollisionMode = config.crashSettings.crashResetMode == DroneConfig.CrashResetMode.NO_COLLISION;
         final boolean armed = state.isArmed();
         final float throttleTargetInput = armed ? input.throttle() : -1.0F;
         final float yawTargetInput = armed ? input.yaw() : 0.0F;
@@ -217,6 +218,9 @@ public final class DronePhysicsModel {
             final float impactEnergy = 0.5F * impactSpeed * impactSpeed;
             state.setVelocity(Vec3.ZERO);
             state.advanceSimTime(dt);
+            if (noCollisionMode) {
+                return StepOutcome.noEvent();
+            }
             return new StepOutcome(true, false, impactSpeed, impactEnergy);
         }
 
@@ -235,6 +239,9 @@ public final class DronePhysicsModel {
             velocity = collisionOutcome.velocityAfterCollision();
             state.setVelocity(velocity);
             state.advanceSimTime(dt);
+            if (noCollisionMode) {
+                return StepOutcome.noEvent();
+            }
 
             if (collisionOutcome.crashed()) {
                 return new StepOutcome(true, false, collisionOutcome.impactSpeed(), collisionOutcome.impactEnergy());

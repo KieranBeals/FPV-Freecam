@@ -610,9 +610,19 @@ public final class DroneSetupScreen extends Screen {
         return DroneInputMapper.buttonName(button);
     }
 
+    private static final DroneConfig.CrashResetMode[] SELECTABLE_CRASH_MODES = {
+            DroneConfig.CrashResetMode.EXIT_TO_PLAYER,
+            DroneConfig.CrashResetMode.CHECKPOINT_RESPAWN,
+            DroneConfig.CrashResetMode.NO_COLLISION
+    };
+
     private static DroneConfig.CrashResetMode nextCrashMode(final DroneConfig.CrashResetMode current) {
-        final DroneConfig.CrashResetMode[] modes = DroneConfig.CrashResetMode.values();
-        return modes[(current.ordinal() + 1) % modes.length];
+        for (int i = 0; i < SELECTABLE_CRASH_MODES.length; i++) {
+            if (SELECTABLE_CRASH_MODES[i] == current) {
+                return SELECTABLE_CRASH_MODES[(i + 1) % SELECTABLE_CRASH_MODES.length];
+            }
+        }
+        return DroneConfig.CrashResetMode.EXIT_TO_PLAYER;
     }
 
     private void applyRealisticFiveInchPreset() {

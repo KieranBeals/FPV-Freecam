@@ -152,4 +152,12 @@ class DroneSimulationMathTest {
         assertEquals(0.0F, highForwardSpeed, 1.0E-6F);
         assertTrue(fastDrop > 0.0F);
     }
+
+    @Test
+    void noCollisionModeIsSelectableInConfig() {
+        final DroneConfig.CrashSettings crashSettings = new DroneConfig.CrashSettings();
+        crashSettings.crashResetMode = DroneConfig.CrashResetMode.NO_COLLISION;
+
+        assertEquals(DroneConfig.CrashResetMode.NO_COLLISION, crashSettings.crashResetMode);
+    }
 }

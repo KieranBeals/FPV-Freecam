@@ -9,7 +9,11 @@ import org.joml.Matrix3f;
 import org.joml.Quaternionf;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+
 public final class DroneSimulationState {
+    private static final double CHECKPOINT_INTERVAL_SECONDS = 1.0D;
     private static final int MAX_TRACKED_BUTTONS = 256;
     private static final Vec3 WORLD_UP = new Vec3(0.0D, 1.0D, 0.0D);
     private static final Vec3 LOCAL_FORWARD = new Vec3(0.0D, 0.0D, 1.0D);
@@ -62,7 +66,7 @@ public final class DroneSimulationState {
     private double checkpointAgeSeconds;
 
     private Snapshot launchSnapshot;
-    private @Nullable Snapshot checkpointSnapshot;
+    private final Deque<Snapshot> checkpointStack = new ArrayDeque<>();
     private @Nullable Snapshot pendingQuickRearmSnapshot;
 
     private final boolean[] previousButtons = new boolean[MAX_TRACKED_BUTTONS];
@@ -111,7 +115,8 @@ public final class DroneSimulationState {
         if (quickRearm != null) {
             this.applySnapshot(quickRearm);
             this.launchSnapshot = quickRearm.copy();
-            this.checkpointSnapshot = quickRearm.copy();
+            this.checkpointStack.clear();
+            this.checkpointStack.addLast(this.launchSnapshot);
             this.cameraAngleDeg = Mth.clamp(cameraAngleDeg, -90.0F, 90.0F);
         } else {
             this.position = eyePosition;
@@ -122,7 +127,8 @@ public final class DroneSimulationState {
             this.batterySagLoss = 0.0F;
             this.cameraAngleDeg = Mth.clamp(cameraAngleDeg, -90.0F, 90.0F);
             this.launchSnapshot = this.createSnapshot();
-            this.checkpointSnapshot = this.launchSnapshot.copy();
+            this.checkpointStack.clear();
+            this.checkpointStack.addLast(this.launchSnapshot);
         }
 
         this.filteredThrottle = 0.0F;
@@ -175,7 +181,7 @@ public final class DroneSimulationState {
         this.simTimeSeconds = 0.0D;
         this.renderAlpha = 1.0F;
         this.launchSnapshot = null;
-        this.checkpointSnapshot = null;
+        this.checkpointStack.clear();
         this.lastCameraYaw = 0.0F;
         this.lastCameraRoll = 0.0F;
     }
@@ -186,12 +192,21 @@ public final class DroneSimulationState {
         }
     }
 
+    public void recoverFromQuickRearm() {
+        this.active = true;
+        this.crashed = false;
+        this.armed = false;
+        this.lastImpactSpeed = 0.0F;
+        this.lastImpactEnergy = 0.0F;
+    }
+
     public boolean restoreCheckpoint() {
-        if (this.checkpointSnapshot == null) {
+        final Snapshot checkpointSnapshot = this.checkpointStack.pollLast();
+        if (checkpointSnapshot == null) {
             return false;
         }
 
-        this.applySnapshot(this.checkpointSnapshot);
+        this.applySnapshot(checkpointSnapshot);
         this.armed = true;
         this.crashed = false;
         this.filteredThrottle = 0.0F;
@@ -214,7 +229,7 @@ public final class DroneSimulationState {
         }
 
         this.checkpointAgeSeconds += dt;
-        if (this.checkpointAgeSeconds < 0.35D) {
+        if (this.checkpointAgeSeconds < CHECKPOINT_INTERVAL_SECONDS) {
             return;
         }
 
@@ -223,7 +238,7 @@ public final class DroneSimulationState {
             return;
         }
 
-        this.checkpointSnapshot = this.createSnapshot();
+        this.checkpointStack.addLast(this.createSnapshot());
         this.checkpointAgeSeconds = 0.0D;
     }
 

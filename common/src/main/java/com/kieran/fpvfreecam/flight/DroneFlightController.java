@@ -255,14 +255,15 @@ public final class DroneFlightController {
         switch (this.config.crashSettings.crashResetMode) {
             case EXIT_TO_PLAYER -> this.forceDeactivate("crash_exit_to_player");
             case QUICK_REARM -> {
-                this.state.queueQuickRearmFromLaunch();
-                this.forceDeactivate("crash_quick_rearm");
+                this.state.recoverFromQuickRearm();
             }
             case CHECKPOINT_RESPAWN -> {
                 final boolean restored = this.state.restoreCheckpoint();
                 if (!restored) {
                     this.forceDeactivate("crash_no_checkpoint");
                 }
+            }
+            case NO_COLLISION -> {
             }
         }
     }

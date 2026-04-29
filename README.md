@@ -9,7 +9,7 @@ It is not an anti-cheat bypass.
 - Betaflight-style `RC rate / super rate / expo`
 - Throttle curve, motor lag, anisotropic drag, battery sag, and descent wash
 - Separate controller actions for `Arm`, `Disarm`, and `Reset-to-Player`
-- Crash model with `EXIT_TO_PLAYER`, `QUICK_REARM`, and `CHECKPOINT_RESPAWN`
+- Crash model with `EXIT_TO_PLAYER`, `QUICK_REARM`, `CHECKPOINT_RESPAWN`, and `NO_COLLISION`
 - Four setup pages: `Controller`, `Rates`, `Craft`, `Realism & Crash`
 - Axis/button capture, calibration, invert options, and deadzone tuning
 - In-flight camera angle adjustment (optional)

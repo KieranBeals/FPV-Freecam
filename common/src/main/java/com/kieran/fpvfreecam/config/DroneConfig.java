@@ -318,7 +318,8 @@ public final class DroneConfig {
     public enum CrashResetMode {
         EXIT_TO_PLAYER,
         QUICK_REARM,
-        CHECKPOINT_RESPAWN
+        CHECKPOINT_RESPAWN,
+        NO_COLLISION
     }
 
     public static final class ControllerConfig {
