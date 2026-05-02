@@ -11,6 +11,14 @@ allprojects {
         maven { url = 'https://maven.fabricmc.net/' }
         maven { url = 'https://maven.neoforged.net/releases' }
         maven { url = 'https://maven.terraformersmc.com/releases/' }
+        exclusiveContent {
+            forRepository {
+                maven { url = 'https://api.modrinth.com/maven' }
+            }
+            filter {
+                includeGroup 'maven.modrinth'
+            }
+        }
     }
 }
 

@@ -55,6 +55,8 @@ configurations.configureEach {
 }
 
 dependencies {
+    implementation "maven.modrinth:yacl:${project.yacl_neoforge_1_21_1_version}"
+
     compileOnly "org.spongepowered:mixin:0.8.5"
 }
 

@@ -1,7 +1,7 @@
 package com.kieran.fpvfreecam.neo;
 
 import com.kieran.fpvfreecam.FpvFreecam;
-import com.kieran.fpvfreecam.ui.DroneSetupScreen;
+import com.kieran.fpvfreecam.ui.DroneConfigScreens;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -21,6 +21,6 @@ public final class FpvFreecamClient {
         NeoForge.EVENT_BUS.addListener(FpvFreecamClientEvents::onClientLogout);
         NeoForge.EVENT_BUS.addListener(FpvFreecamClientEvents::onGameShuttingDown);
 
-        container.registerExtensionPoint(IConfigScreenFactory.class, (minecraft, parent) -> new DroneSetupScreen(parent));
+        container.registerExtensionPoint(IConfigScreenFactory.class, (minecraft, parent) -> DroneConfigScreens.create(parent));
     }
 }
