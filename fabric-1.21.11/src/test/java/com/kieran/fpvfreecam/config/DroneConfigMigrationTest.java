@@ -199,6 +199,27 @@ class DroneConfigMigrationTest {
         assertTrue(config.crashSettings.exitToPlayerOnDamage);
     }
 
+    @Test
+    void removesRetiredSafetyDebugFieldOnLoadSave(@TempDir final Path tempDir) throws Exception {
+        final Path configFile = tempDir.resolve("fpv-freecam.json");
+        Files.writeString(configFile, """
+                {
+                  "schemaVersion": 2,
+                  "simulationMode": "CLIENT_ONLY",
+                  "realismProfile": {
+                    "batterySagStrength": 0.25,
+                    "showNetworkSafetyDebugLine": true
+                  }
+                }
+                """);
+
+        final DroneConfig config = DroneConfig.load(configPaths(tempDir));
+
+        assertEquals(0.25F, config.realismProfile.batterySagStrength, 1.0E-6F);
+        final JsonObject saved = JsonParser.parseString(Files.readString(configFile)).getAsJsonObject();
+        assertFalse(saved.getAsJsonObject("realismProfile").has("showNetworkSafetyDebugLine"));
+    }
+
     private static ClientConfigPaths configPaths(final Path path) {
         return () -> path;
     }

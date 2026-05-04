@@ -1,10 +1,11 @@
 package com.kieran.fpvfreecam.platform;
 
-import com.kieran.fpvfreecam.FpvFreecam;
+import com.kieran.fpvfreecam.config.DroneConfig;
 import com.kieran.fpvfreecam.flight.DroneFlightController;
-import com.kieran.fpvfreecam.flight.DroneNetworkSafetyGuard;
 import net.minecraft.client.Minecraft;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Locale;
 
 public final class ClientLifecycleBridge {
     private final DroneFlightController flightController;
@@ -35,9 +36,10 @@ public final class ClientLifecycleBridge {
                 ? "Controller: unknown"
                 : "Controller: " + snapshot.controllerName();
         final String base = String.format(
-                "%s | Cam %.0f deg | Speed %.1f m/s | Thr %.0f%% | Sag %.0f%% | %s | R %.0f P %.0f Y %.0f deg/s",
+                "%s | Cam %.0f deg | Crash %s | Speed %.1f m/s | Thr %.0f%% | Sag %.0f%% | %s | R %.0f P %.0f Y %.0f deg/s",
                 controllerName,
                 snapshot.cameraAngleDeg(),
+                formatCrashResetMode(snapshot.crashResetMode()),
                 snapshot.speedMps(),
                 snapshot.throttlePercent(),
                 snapshot.sagPercent(),
@@ -47,14 +49,23 @@ public final class ClientLifecycleBridge {
                 snapshot.yawRateDegPerSecond()
         );
 
-        if (FpvFreecam.CONFIG != null && FpvFreecam.CONFIG.realismProfile.showNetworkSafetyDebugLine) {
-            return base + "\n" + DroneNetworkSafetyGuard.DEBUG_LINE_CLIENT_ONLY
-                    + "\n" + DroneNetworkSafetyGuard.DEBUG_LINE_NO_PACKETS;
-        }
         return base;
     }
 
     public @Nullable DroneFlightController.HudSnapshot getHudSnapshot() {
         return this.flightController.getHudSnapshot();
+    }
+
+    private static String formatCrashResetMode(final DroneConfig.CrashResetMode mode) {
+        final String value = (mode == null ? DroneConfig.CrashResetMode.EXIT_TO_PLAYER : mode).name();
+        final String[] parts = value.toLowerCase(Locale.ROOT).split("_");
+        final StringBuilder builder = new StringBuilder();
+        for (final String part : parts) {
+            if (!builder.isEmpty()) {
+                builder.append(' ');
+            }
+            builder.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return builder.toString();
     }
 }

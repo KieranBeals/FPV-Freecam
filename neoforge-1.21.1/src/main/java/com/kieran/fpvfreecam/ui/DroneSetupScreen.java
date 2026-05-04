@@ -16,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public final class DroneSetupScreen extends Screen {
     private static final int LABEL_COLOR = 0xE0E0E0;
@@ -50,7 +51,6 @@ public final class DroneSetupScreen extends Screen {
     private Button inFlightTiltAdjustButton;
 
     private Button crashModeButton;
-    private Button safetyDebugButton;
     private Button damageExitButton;
 
     private CaptureTarget captureTarget = CaptureTarget.NONE;
@@ -279,7 +279,12 @@ public final class DroneSetupScreen extends Screen {
         final int left = centerX - 160;
         final int mid = centerX - 52;
         final int right = centerX + 56;
-        int y = 58;
+        int y = 48;
+
+        this.addStatusLine(left, y, "Crash Mode: " + formatCrashResetMode(this.workingConfig.crashSettings.crashResetMode));
+        y += 14;
+        this.addStatusLine(left, y, String.format(Locale.ROOT, "Camera Angle: %.0f deg", this.workingConfig.craftProfile.cameraAngleDeg));
+        y += 28;
 
         this.addFieldLabel(left, y - 11, "Battery Sag");
         this.addFieldLabel(mid, y - 11, "Max Sag Loss");
@@ -291,13 +296,8 @@ public final class DroneSetupScreen extends Screen {
 
         this.addFieldLabel(left, y - 11, "Descent Wash");
         this.addFieldLabel(mid, y - 11, "Load Imperfection");
-        this.addFieldLabel(right, y - 11, "Safety Debug");
         this.addFloatField(left, y, 90, this.workingConfig.realismProfile.descentWashStrength, value -> this.workingConfig.realismProfile.descentWashStrength = value);
         this.addFloatField(mid, y, 90, this.workingConfig.realismProfile.loadImperfectionStrength, value -> this.workingConfig.realismProfile.loadImperfectionStrength = value);
-        this.safetyDebugButton = this.addPageWidget(Button.builder(Component.empty(), button -> {
-            this.workingConfig.realismProfile.showNetworkSafetyDebugLine = !this.workingConfig.realismProfile.showNetworkSafetyDebugLine;
-            this.saveAndRefresh();
-        }).bounds(right, y, 110, 20).build());
         y += 34;
 
         this.addFieldLabel(left, y - 11, "Glance Speed (m/s)");
@@ -409,10 +409,7 @@ public final class DroneSetupScreen extends Screen {
 
         if (this.page == Page.REALISM_CRASH) {
             if (this.crashModeButton != null) {
-                this.crashModeButton.setMessage(Component.literal("Crash Mode: " + this.workingConfig.crashSettings.crashResetMode.name()));
-            }
-            if (this.safetyDebugButton != null) {
-                this.safetyDebugButton.setMessage(Component.literal(this.workingConfig.realismProfile.showNetworkSafetyDebugLine ? "Debug Line: On" : "Debug Line: Off"));
+                this.crashModeButton.setMessage(Component.literal("Crash Mode: " + formatCrashResetMode(this.workingConfig.crashSettings.crashResetMode)));
             }
             if (this.damageExitButton != null) {
                 this.damageExitButton.setMessage(Component.literal(this.workingConfig.crashSettings.exitToPlayerOnDamage ? "Exit On Damage: On" : "Exit On Damage: Off"));
@@ -594,6 +591,11 @@ public final class DroneSetupScreen extends Screen {
         label.setAlpha(0.85F);
     }
 
+    private void addStatusLine(final int x, final int y, final String text) {
+        final StringWidget label = this.addPageWidget(new StringWidget(x, y, 320, 9, Component.literal(text), this.font));
+        label.setAlpha(0.95F);
+    }
+
     private <T extends AbstractWidget> T addPageWidget(final T widget) {
         this.pageWidgets.add(widget);
         return this.addRenderableWidget(widget);
@@ -608,6 +610,19 @@ public final class DroneSetupScreen extends Screen {
             return "Unbound";
         }
         return DroneInputMapper.buttonName(button);
+    }
+
+    private static String formatCrashResetMode(final DroneConfig.CrashResetMode mode) {
+        final String value = (mode == null ? DroneConfig.CrashResetMode.EXIT_TO_PLAYER : mode).name();
+        final String[] parts = value.toLowerCase(Locale.ROOT).split("_");
+        final StringBuilder builder = new StringBuilder();
+        for (final String part : parts) {
+            if (!builder.isEmpty()) {
+                builder.append(' ');
+            }
+            builder.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return builder.toString();
     }
 
     private static final DroneConfig.CrashResetMode[] SELECTABLE_CRASH_MODES = {

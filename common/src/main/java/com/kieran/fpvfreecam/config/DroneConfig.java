@@ -247,8 +247,17 @@ public final class DroneConfig {
             schemaVersion = resolveSchemaVersion(working);
         }
 
+        removeRetiredFields(working);
         working.addProperty("schemaVersion", CURRENT_SCHEMA_VERSION);
         return working;
+    }
+
+    private static void removeRetiredFields(final JsonObject working) {
+        if (!working.has("realismProfile") || !working.get("realismProfile").isJsonObject()) {
+            return;
+        }
+
+        working.getAsJsonObject("realismProfile").remove("showNetworkSafetyDebugLine");
     }
 
     private static int resolveSchemaVersion(final JsonObject json) {
@@ -532,7 +541,6 @@ public final class DroneConfig {
         public float sagRecoverySeconds = DroneProfileDefaults.SAG_RECOVERY_SECONDS;
         public float descentWashStrength = DroneProfileDefaults.DESCENT_WASH_STRENGTH;
         public float loadImperfectionStrength = DroneProfileDefaults.LOAD_IMPERFECTION_STRENGTH;
-        public boolean showNetworkSafetyDebugLine = false;
 
         public RealismProfile() {
         }
@@ -548,7 +556,6 @@ public final class DroneConfig {
             copy.sagRecoverySeconds = this.sagRecoverySeconds;
             copy.descentWashStrength = this.descentWashStrength;
             copy.loadImperfectionStrength = this.loadImperfectionStrength;
-            copy.showNetworkSafetyDebugLine = this.showNetworkSafetyDebugLine;
             return copy;
         }
 

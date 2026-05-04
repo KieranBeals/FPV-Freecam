@@ -5,6 +5,7 @@ import com.kieran.fpvfreecam.config.DroneConfig;
 import com.kieran.fpvfreecam.flight.DroneProfileDefaults;
 import dev.isxander.yacl3.api.ButtonOption;
 import dev.isxander.yacl3.api.ConfigCategory;
+import dev.isxander.yacl3.api.LabelOption;
 import dev.isxander.yacl3.api.Option;
 import dev.isxander.yacl3.api.OptionDescription;
 import dev.isxander.yacl3.api.OptionGroup;
@@ -193,7 +194,14 @@ public final class DroneConfigScreens {
     private static ConfigCategory realismCrashCategory(final DroneConfig config) {
         return ConfigCategory.createBuilder()
                 .name(Component.literal("Realism and Crash"))
-                .tooltip(Component.literal("Battery sag, prop wash, imperfections, safety debug, and crash behavior."))
+                .tooltip(Component.literal("Battery sag, prop wash, imperfections, and crash behavior."))
+                .group(OptionGroup.createBuilder()
+                        .name(Component.literal("Current Status"))
+                        .option(LabelOption.createBuilder()
+                                .line(Component.literal("Crash Mode: " + formatCrashResetMode(config.crashSettings.crashResetMode)))
+                                .line(Component.literal("Camera Angle: " + String.format(Locale.ROOT, "%.0f deg", config.craftProfile.cameraAngleDeg)))
+                                .build())
+                        .build())
                 .group(OptionGroup.createBuilder()
                         .name(Component.literal("Realism"))
                         .option(floatOption("Battery Sag", DroneProfileDefaults.BATTERY_SAG_STRENGTH, () -> config.realismProfile.batterySagStrength, value -> config.realismProfile.batterySagStrength = value, 0.0F, 1.0F, 0.01F))
@@ -201,7 +209,6 @@ public final class DroneConfigScreens {
                         .option(floatOption("Sag Recovery", DroneProfileDefaults.SAG_RECOVERY_SECONDS, () -> config.realismProfile.sagRecoverySeconds, value -> config.realismProfile.sagRecoverySeconds = value, 0.20F, 10.0F, 0.1F, "s"))
                         .option(floatOption("Descent Wash", DroneProfileDefaults.DESCENT_WASH_STRENGTH, () -> config.realismProfile.descentWashStrength, value -> config.realismProfile.descentWashStrength = value, 0.0F, 1.0F, 0.01F))
                         .option(floatOption("Load Imperfection", DroneProfileDefaults.LOAD_IMPERFECTION_STRENGTH, () -> config.realismProfile.loadImperfectionStrength, value -> config.realismProfile.loadImperfectionStrength = value, 0.0F, 1.0F, 0.01F))
-                        .option(booleanOption("Safety Debug Line", "Render the client-only network safety debug line.", false, () -> config.realismProfile.showNetworkSafetyDebugLine, value -> config.realismProfile.showNetworkSafetyDebugLine = value))
                         .build())
                 .group(OptionGroup.createBuilder()
                         .name(Component.literal("Crash"))
@@ -267,7 +274,7 @@ public final class DroneConfigScreens {
                 .binding(DroneConfig.CrashResetMode.EXIT_TO_PLAYER, () -> config.crashSettings.crashResetMode, value -> config.crashSettings.crashResetMode = value)
                 .controller(option -> EnumControllerBuilder.create(option)
                         .enumClass(DroneConfig.CrashResetMode.class)
-                        .valueFormatter(value -> Component.literal(formatEnum(value.name()))))
+                        .valueFormatter(value -> Component.literal(formatCrashResetMode(value))))
                 .build();
     }
 
@@ -298,5 +305,9 @@ public final class DroneConfigScreens {
             builder.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
         }
         return builder.toString();
+    }
+
+    private static String formatCrashResetMode(final DroneConfig.CrashResetMode mode) {
+        return formatEnum(mode == null ? DroneConfig.CrashResetMode.EXIT_TO_PLAYER.name() : mode.name());
     }
 }
