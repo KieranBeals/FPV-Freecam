@@ -646,7 +646,7 @@ public final class DroneSetupScreen extends Screen {
         this.workingConfig.controller.invertYaw = false;
         this.workingConfig.controller.invertPitch = true;
         this.workingConfig.controller.invertRoll = false;
-        this.workingConfig.controller.deadzone = 0.08F;
+        this.workingConfig.controller.deadzone = 0.0F;
     }
 
     private interface FloatSetter {

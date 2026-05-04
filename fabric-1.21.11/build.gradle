@@ -49,6 +49,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_1_21_11_api_version}"
     modImplementation "com.terraformersmc:modmenu:${project.fabric_1_21_11_modmenu_version}"
     modImplementation "maven.modrinth:yacl:${project.yacl_fabric_1_21_11_version}"
+    implementation "org.quiltmc.parsers:gson:${project.quilt_parsers_version}"
 
     compileOnly "org.spongepowered:mixin:0.8.5"
     testImplementation platform("org.junit:junit-bom:5.12.2")

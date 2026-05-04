@@ -6,35 +6,24 @@ import com.kieran.fpvfreecam.input.DroneInputMapper;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 public final class ControllerBindingSession {
     private static final long CAPTURE_GRACE_MS = 200L;
     private static final long AXIS_CALIBRATION_MS = 2500L;
     private static final float AXIS_CALIBRATION_RANGE_MIN = 0.5F;
-    private static final long LABEL_REFRESH_MS = 100L;
-    private static final CaptureTarget[] AXIS_TARGETS = {
-            CaptureTarget.THROTTLE_AXIS,
-            CaptureTarget.YAW_AXIS,
-            CaptureTarget.PITCH_AXIS,
-            CaptureTarget.ROLL_AXIS
-    };
 
     private final DroneConfig workingConfig;
-    private final Map<CaptureTarget, String> displayedAxisLabels = new EnumMap<>(CaptureTarget.class);
 
     private CaptureTarget captureTarget = CaptureTarget.NONE;
     private long captureStartTime;
-    private long lastLabelRefreshTime;
     private @Nullable DroneInputMapper.ButtonCaptureSnapshot buttonCaptureSnapshot;
     private @Nullable AxisCalibrationSession axisCalibrationSession;
-    private CaptureTarget displayedCaptureTarget = CaptureTarget.NONE;
     private @Nullable Integer selectedControllerIndex;
+    private boolean configChanged;
 
     public ControllerBindingSession(final DroneConfig workingConfig) {
         this.workingConfig = workingConfig;
@@ -60,9 +49,18 @@ public final class ControllerBindingSession {
         }
 
         switch (this.captureTarget) {
-            case ARM_BUTTON -> this.workingConfig.controller.armButton = capture;
-            case DISARM_BUTTON -> this.workingConfig.controller.disarmButton = capture;
-            case RESET_BUTTON -> this.workingConfig.controller.resetButton = capture;
+            case ARM_BUTTON -> {
+                this.workingConfig.controller.armButton = capture;
+                this.configChanged = true;
+            }
+            case DISARM_BUTTON -> {
+                this.workingConfig.controller.disarmButton = capture;
+                this.configChanged = true;
+            }
+            case RESET_BUTTON -> {
+                this.workingConfig.controller.resetButton = capture;
+                this.configChanged = true;
+            }
             case NONE, THROTTLE_AXIS, YAW_AXIS, PITCH_AXIS, ROLL_AXIS -> {
             }
         }
@@ -107,20 +105,30 @@ public final class ControllerBindingSession {
         return this.captureTarget;
     }
 
+    public boolean consumeConfigChanged() {
+        final boolean changed = this.configChanged;
+        this.configChanged = false;
+        return changed;
+    }
+
     public void cycleController() {
         this.cancelCapture();
 
         final List<DroneInputMapper.ControllerInfo> controllers = this.getSelectableControllers();
         if (controllers.isEmpty()) {
+            final boolean hadControllerSelection = this.hasControllerSelection();
             this.workingConfig.clearControllerSelection();
             this.selectedControllerIndex = null;
+            this.configChanged |= hadControllerSelection;
             return;
         }
 
         final int currentIndex = this.findCurrentControllerIndex(controllers);
         if (currentIndex == controllers.size() - 1) {
+            final boolean hadControllerSelection = this.hasControllerSelection();
             this.workingConfig.clearControllerSelection();
             this.selectedControllerIndex = null;
+            this.configChanged |= hadControllerSelection;
             return;
         }
 
@@ -128,6 +136,7 @@ public final class ControllerBindingSession {
         final DroneInputMapper.ControllerInfo controller = controllers.get(nextIndex);
         this.workingConfig.setController(controller.guid(), controller.displayName());
         this.selectedControllerIndex = nextIndex;
+        this.configChanged = true;
     }
 
     public boolean ensureControllerSelected() {
@@ -137,8 +146,10 @@ public final class ControllerBindingSession {
 
         final List<DroneInputMapper.ControllerInfo> controllers = this.getSelectableControllers();
         if (controllers.isEmpty()) {
+            final boolean hadControllerSelection = this.hasControllerSelection();
             this.workingConfig.clearControllerSelection();
             this.selectedControllerIndex = null;
+            this.configChanged |= hadControllerSelection;
             this.cancelCapture();
             return false;
         }
@@ -146,6 +157,7 @@ public final class ControllerBindingSession {
         final DroneInputMapper.ControllerInfo controller = controllers.get(0);
         this.workingConfig.setController(controller.guid(), controller.displayName());
         this.selectedControllerIndex = 0;
+        this.configChanged = true;
         return true;
     }
 
@@ -204,34 +216,6 @@ public final class ControllerBindingSession {
                 this.invertForTarget(target)
         );
         return formatAxisValue(value);
-    }
-
-    public void captureDisplayedAxisLabels() {
-        for (final CaptureTarget target : AXIS_TARGETS) {
-            this.displayedAxisLabels.put(target, this.axisBindingLabel(target));
-        }
-        this.displayedCaptureTarget = this.captureTarget;
-        this.lastLabelRefreshTime = System.currentTimeMillis();
-    }
-
-    public boolean shouldRefreshAxisLabels(final long now) {
-        final boolean captureChanged = this.displayedCaptureTarget != this.captureTarget;
-        if (!captureChanged && now - this.lastLabelRefreshTime < LABEL_REFRESH_MS) {
-            return false;
-        }
-
-        boolean changed = captureChanged;
-        for (final CaptureTarget target : AXIS_TARGETS) {
-            final String label = this.axisBindingLabel(target);
-            if (!label.equals(this.displayedAxisLabels.get(target))) {
-                this.displayedAxisLabels.put(target, label);
-                changed = true;
-            }
-        }
-
-        this.displayedCaptureTarget = this.captureTarget;
-        this.lastLabelRefreshTime = now;
-        return changed;
     }
 
     private int axisForTarget(final CaptureTarget target) {
@@ -309,21 +293,25 @@ public final class ControllerBindingSession {
                 this.workingConfig.controller.axisThrottle = axis;
                 this.workingConfig.controller.axisThrottleMin = min;
                 this.workingConfig.controller.axisThrottleMax = max;
+                this.configChanged = true;
             }
             case YAW_AXIS -> {
                 this.workingConfig.controller.axisYaw = axis;
                 this.workingConfig.controller.axisYawMin = min;
                 this.workingConfig.controller.axisYawMax = max;
+                this.configChanged = true;
             }
             case PITCH_AXIS -> {
                 this.workingConfig.controller.axisPitch = axis;
                 this.workingConfig.controller.axisPitchMin = min;
                 this.workingConfig.controller.axisPitchMax = max;
+                this.configChanged = true;
             }
             case ROLL_AXIS -> {
                 this.workingConfig.controller.axisRoll = axis;
                 this.workingConfig.controller.axisRollMin = min;
                 this.workingConfig.controller.axisRollMax = max;
+                this.configChanged = true;
             }
             case NONE, ARM_BUTTON, DISARM_BUTTON, RESET_BUTTON -> {
             }
@@ -351,6 +339,11 @@ public final class ControllerBindingSession {
             }
         }
         return -1;
+    }
+
+    private boolean hasControllerSelection() {
+        return !this.workingConfig.controller.controllerGuid.isBlank()
+                || !this.workingConfig.controller.controllerName.isBlank();
     }
 
     private List<DroneInputMapper.ControllerInfo> getSelectableControllers() {

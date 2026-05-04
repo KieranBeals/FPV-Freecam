@@ -1,5 +1,6 @@
 package com.kieran.fpvfreecam.ui;
 
+import com.kieran.fpvfreecam.FpvFreecam;
 import com.kieran.fpvfreecam.config.DroneConfig;
 import dev.isxander.yacl3.api.ButtonOption;
 import dev.isxander.yacl3.api.ConfigCategory;
@@ -25,28 +26,25 @@ public final class DroneConfigScreen extends YACLScreen {
         this.parent = parent;
         this.workingConfig = workingConfig;
         this.controllerSession = controllerSession;
-        this.controllerSession.captureDisplayedAxisLabels();
     }
 
     @Override
     public void tick() {
         super.tick();
         if (this.controllerSession.tick()) {
-            this.rebuild();
+            if (this.controllerSession.consumeConfigChanged()) {
+                this.saveWorkingConfig();
+            }
             return;
         }
 
         this.applyPendingValues();
-        if (this.controllerSession.shouldRefreshAxisLabels(System.currentTimeMillis())) {
-            this.rebuild();
-        }
     }
 
     @Override
     public boolean shouldCloseOnEsc() {
         if (this.controllerSession.isCaptureActive()) {
             this.controllerSession.cancelCapture();
-            this.rebuild();
             return false;
         }
         return super.shouldCloseOnEsc();
@@ -67,5 +65,10 @@ public final class DroneConfigScreen extends YACLScreen {
                 }
             }
         }
+    }
+
+    private void saveWorkingConfig() {
+        FpvFreecam.CONFIG.copyFrom(this.workingConfig);
+        FpvFreecam.CONFIG.save();
     }
 }

@@ -353,7 +353,7 @@ public final class DroneConfig {
         public boolean invertYaw = false;
         public boolean invertPitch = false;
         public boolean invertRoll = false;
-        public float deadzone = 0.08F;
+        public float deadzone = 0.0F;
         public boolean allowInFlightCameraAngleAdjust = true;
 
         public ControllerConfig() {
@@ -624,6 +624,6 @@ public final class DroneConfig {
         private boolean invertYaw = false;
         private boolean invertPitch = false;
         private boolean invertRoll = false;
-        private float deadzone = 0.08F;
+        private float deadzone = 0.0F;
     }
 }
