@@ -282,11 +282,6 @@ public final class DroneSetupScreen extends Screen {
         final int right = centerX + 56;
         int y = 48;
 
-        this.addStatusLine(left, y, "Crash Mode: " + formatCrashResetMode(this.workingConfig.crashSettings.crashResetMode));
-        y += 14;
-        this.addStatusLine(left, y, String.format(Locale.ROOT, "Camera Angle: %.0f deg", this.workingConfig.craftProfile.cameraAngleDeg));
-        y += 28;
-
         this.addFieldLabel(left, y - 11, "Battery Sag");
         this.addFieldLabel(mid, y - 11, "Max Sag Loss");
         this.addFieldLabel(right, y - 11, "Sag Recovery (s)");

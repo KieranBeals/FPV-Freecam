@@ -5,7 +5,6 @@ import com.kieran.fpvfreecam.config.DroneConfig;
 import com.kieran.fpvfreecam.flight.DroneProfileDefaults;
 import dev.isxander.yacl3.api.ButtonOption;
 import dev.isxander.yacl3.api.ConfigCategory;
-import dev.isxander.yacl3.api.LabelOption;
 import dev.isxander.yacl3.api.Option;
 import dev.isxander.yacl3.api.OptionDescription;
 import dev.isxander.yacl3.api.OptionGroup;
@@ -195,13 +194,6 @@ public final class DroneConfigScreens {
         return ConfigCategory.createBuilder()
                 .name(Component.literal("Realism and Crash"))
                 .tooltip(Component.literal("Battery sag, prop wash, imperfections, and crash behavior."))
-                .group(OptionGroup.createBuilder()
-                        .name(Component.literal("Current Status"))
-                        .option(LabelOption.createBuilder()
-                                .line(Component.literal("Crash Mode: " + formatCrashResetMode(config.crashSettings.crashResetMode)))
-                                .line(Component.literal("Camera Angle: " + String.format(Locale.ROOT, "%.0f deg", config.craftProfile.cameraAngleDeg)))
-                                .build())
-                        .build())
                 .group(OptionGroup.createBuilder()
                         .name(Component.literal("Realism"))
                         .option(floatOption("Battery Sag", DroneProfileDefaults.BATTERY_SAG_STRENGTH, () -> config.realismProfile.batterySagStrength, value -> config.realismProfile.batterySagStrength = value, 0.0F, 1.0F, 0.01F))
