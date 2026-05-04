@@ -15,6 +15,40 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DroneConfigMigrationTest {
     @Test
+    void defaultsControllerAxisInversionToFalse(@TempDir final Path tempDir) {
+        final DroneConfig config = DroneConfig.load(configPaths(tempDir));
+
+        assertFalse(config.controller.invertThrottle);
+        assertFalse(config.controller.invertYaw);
+        assertFalse(config.controller.invertPitch);
+        assertFalse(config.controller.invertRoll);
+    }
+
+    @Test
+    void preservesSavedControllerAxisInversionTrueValues(@TempDir final Path tempDir) throws Exception {
+        final Path configFile = tempDir.resolve("fpv-freecam.json");
+        Files.writeString(configFile, """
+                {
+                  "schemaVersion": 2,
+                  "simulationMode": "CLIENT_ONLY",
+                  "controller": {
+                    "invertThrottle": true,
+                    "invertYaw": true,
+                    "invertPitch": true,
+                    "invertRoll": true
+                  }
+                }
+                """);
+
+        final DroneConfig config = DroneConfig.load(configPaths(tempDir));
+
+        assertTrue(config.controller.invertThrottle);
+        assertTrue(config.controller.invertYaw);
+        assertTrue(config.controller.invertPitch);
+        assertTrue(config.controller.invertRoll);
+    }
+
+    @Test
     void migratesLegacyGroupedSchemaV1ToV2(@TempDir final Path tempDir) throws Exception {
         final Path configFile = tempDir.resolve("fpv-freecam.json");
         Files.writeString(configFile, """

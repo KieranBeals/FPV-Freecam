@@ -340,9 +340,9 @@ public final class DroneConfig {
         public float axisPitchMax = 1.0F;
         public float axisRollMin = -1.0F;
         public float axisRollMax = 1.0F;
-        public boolean invertThrottle = true;
+        public boolean invertThrottle = false;
         public boolean invertYaw = false;
-        public boolean invertPitch = true;
+        public boolean invertPitch = false;
         public boolean invertRoll = false;
         public float deadzone = 0.08F;
         public boolean allowInFlightCameraAngleAdjust = true;
@@ -613,9 +613,9 @@ public final class DroneConfig {
         private float axisRollMin = -1.0F;
         private float axisRollMax = 1.0F;
         private float cameraPitch = 28.0F;
-        private boolean invertThrottle = true;
+        private boolean invertThrottle = false;
         private boolean invertYaw = false;
-        private boolean invertPitch = true;
+        private boolean invertPitch = false;
         private boolean invertRoll = false;
         private float deadzone = 0.08F;
     }

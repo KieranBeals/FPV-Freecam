@@ -346,6 +346,38 @@ public final class DroneInputMapper {
         }
     }
 
+    public float readConfiguredAxisValue(
+            final DroneConfig config,
+            final int axis,
+            final float min,
+            final float max,
+            final float deadzone,
+            final boolean invert
+    ) {
+        final ControllerInfo controller = this.resolveConfiguredController(config);
+        if (controller == null) {
+            return 0.0F;
+        }
+
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            if (controller.gamepadMapped()) {
+                final GLFWGamepadState gamepadState = GLFWGamepadState.malloc(stack);
+                if (!GLFW.glfwGetGamepadState(controller.joystickId(), gamepadState) || axis < 0 || axis > GLFW.GLFW_GAMEPAD_AXIS_LAST) {
+                    return 0.0F;
+                }
+
+                return applyAxisMapping(gamepadState.axes(axis), min, max, deadzone, invert);
+            }
+
+            final FloatBuffer axes = GLFW.glfwGetJoystickAxes(controller.joystickId());
+            if (axes == null || axis < 0 || axis >= axes.limit()) {
+                return 0.0F;
+            }
+
+            return applyAxisMapping(axes.get(axis), min, max, deadzone, invert);
+        }
+    }
+
     public @Nullable RawInputSnapshot snapshotRawInputs(final DroneConfig config) {
         final ControllerInfo controller = this.resolveConfiguredController(config);
         if (controller == null) {
@@ -410,14 +442,7 @@ public final class DroneInputMapper {
             return 0.0F;
         }
 
-        float value = normalizeAxis(gamepadState.axes(axis), min, max);
-        final float magnitude = Math.abs(value);
-        if (magnitude <= deadzone) {
-            return 0.0F;
-        }
-
-        value = Math.copySign((magnitude - deadzone) / (1.0F - deadzone), value);
-        return invert ? -value : value;
+        return applyAxisMapping(gamepadState.axes(axis), min, max, deadzone, invert);
     }
 
     private float readAxis(final FloatBuffer axes, final int axis, final float min, final float max, final float deadzone, final boolean invert) {
@@ -425,7 +450,11 @@ public final class DroneInputMapper {
             return 0.0F;
         }
 
-        float value = normalizeAxis(axes.get(axis), min, max);
+        return applyAxisMapping(axes.get(axis), min, max, deadzone, invert);
+    }
+
+    private static float applyAxisMapping(final float rawValue, final float min, final float max, final float deadzone, final boolean invert) {
+        float value = normalizeAxis(rawValue, min, max);
         final float magnitude = Math.abs(value);
         if (magnitude <= deadzone) {
             return 0.0F;

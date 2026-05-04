@@ -12,7 +12,6 @@ import dev.isxander.yacl3.api.YetAnotherConfigLib;
 import dev.isxander.yacl3.api.controller.BooleanControllerBuilder;
 import dev.isxander.yacl3.api.controller.EnumControllerBuilder;
 import dev.isxander.yacl3.api.controller.FloatSliderControllerBuilder;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -26,27 +25,111 @@ public final class DroneConfigScreens {
 
     public static Screen create(final Screen parent) {
         final DroneConfig workingConfig = FpvFreecam.CONFIG.copy();
-        return YetAnotherConfigLib.createBuilder()
+        final ControllerBindingSession controllerSession = new ControllerBindingSession(workingConfig);
+        return create(parent, workingConfig, controllerSession);
+    }
+
+    static Screen create(
+            final Screen parent,
+            final DroneConfig workingConfig,
+            final ControllerBindingSession controllerSession
+    ) {
+        final DroneConfigScreen[] screenRef = new DroneConfigScreen[1];
+        final Runnable refreshScreen = () -> {
+            if (screenRef[0] != null) {
+                screenRef[0].rebuild();
+            }
+        };
+        final YetAnotherConfigLib yacl = YetAnotherConfigLib.createBuilder()
                 .title(Component.literal("FPV Freecam Configuration"))
-                .category(controllerCategory(workingConfig))
+                .category(controllerCategory(workingConfig, controllerSession, refreshScreen))
                 .category(ratesCategory(workingConfig))
                 .category(craftCategory(workingConfig))
                 .category(realismCrashCategory(workingConfig))
                 .save(() -> save(workingConfig))
-                .build()
-                .generateScreen(parent);
+                .build();
+        screenRef[0] = new DroneConfigScreen(yacl, parent, workingConfig, controllerSession);
+        return screenRef[0];
     }
 
-    private static ConfigCategory controllerCategory(final DroneConfig config) {
+    private static ConfigCategory controllerCategory(
+            final DroneConfig config,
+            final ControllerBindingSession controllerSession,
+            final Runnable refreshScreen
+    ) {
         return ConfigCategory.createBuilder()
                 .name(Component.literal("Controller"))
                 .tooltip(Component.literal("Gamepad selection, capture, calibration, and camera adjustment."))
-                .option(ButtonOption.createBuilder()
-                        .name(Component.literal("Controller Setup"))
-                        .text(Component.literal("Open"))
-                        .description(description("Open the custom gamepad capture and calibration screen."))
-                        .action((yaclScreen, option) -> Minecraft.getInstance().setScreen(new DroneSetupScreen(yaclScreen)))
+                .group(OptionGroup.createBuilder()
+                        .name(Component.literal("Selection"))
+                        .option(ButtonOption.createBuilder()
+                                .name(Component.literal("Controller"))
+                                .text(Component.literal(controllerSession.selectedControllerName()))
+                                .description(description("Cycle through connected controllers and None. Shows None when no controller is selected or available."))
+                                .action((yaclScreen, option) -> {
+                                    controllerSession.cycleController();
+                                    refreshScreen.run();
+                                })
+                                .build())
                         .build())
+                .group(OptionGroup.createBuilder()
+                        .name(Component.literal("Buttons"))
+                        .option(buttonCaptureOption("Arm", "Button used to arm the drone.", ControllerBindingSession.CaptureTarget.ARM_BUTTON, controllerSession, refreshScreen))
+                        .option(buttonCaptureOption("Disarm", "Button used to disarm the drone.", ControllerBindingSession.CaptureTarget.DISARM_BUTTON, controllerSession, refreshScreen))
+                        .option(buttonCaptureOption("Reset", "Button used to reset after a crash.", ControllerBindingSession.CaptureTarget.RESET_BUTTON, controllerSession, refreshScreen))
+                        .build())
+                .group(OptionGroup.createBuilder()
+                        .name(Component.literal("Axes"))
+                        .option(axisCaptureOption("Throttle", "Move the throttle stick through its full range to bind and calibrate it.", ControllerBindingSession.CaptureTarget.THROTTLE_AXIS, controllerSession, refreshScreen))
+                        .option(axisCaptureOption("Yaw", "Move the yaw stick through its full range to bind and calibrate it.", ControllerBindingSession.CaptureTarget.YAW_AXIS, controllerSession, refreshScreen))
+                        .option(axisCaptureOption("Pitch", "Move the pitch stick through its full range to bind and calibrate it.", ControllerBindingSession.CaptureTarget.PITCH_AXIS, controllerSession, refreshScreen))
+                        .option(axisCaptureOption("Roll", "Move the roll stick through its full range to bind and calibrate it.", ControllerBindingSession.CaptureTarget.ROLL_AXIS, controllerSession, refreshScreen))
+                        .build())
+                .group(OptionGroup.createBuilder()
+                        .name(Component.literal("Axis Behavior"))
+                        .option(booleanOption("Invert Throttle", "Invert the throttle axis input.", false, () -> config.controller.invertThrottle, value -> config.controller.invertThrottle = value))
+                        .option(booleanOption("Invert Yaw", "Invert the yaw axis input.", false, () -> config.controller.invertYaw, value -> config.controller.invertYaw = value))
+                        .option(booleanOption("Invert Pitch", "Invert the pitch axis input.", false, () -> config.controller.invertPitch, value -> config.controller.invertPitch = value))
+                        .option(booleanOption("Invert Roll", "Invert the roll axis input.", false, () -> config.controller.invertRoll, value -> config.controller.invertRoll = value))
+                        .option(floatOption("Deadzone", 0.08F, () -> config.controller.deadzone, value -> config.controller.deadzone = value, 0.0F, 0.95F, 0.01F))
+                        .option(booleanOption("In-flight Camera Adjust", "Allow controller input to adjust camera angle while flying.", true, () -> config.controller.allowInFlightCameraAngleAdjust, value -> config.controller.allowInFlightCameraAngleAdjust = value))
+                        .build())
+                .build();
+    }
+
+    private static ButtonOption buttonCaptureOption(
+            final String name,
+            final String description,
+            final ControllerBindingSession.CaptureTarget target,
+            final ControllerBindingSession controllerSession,
+            final Runnable refreshScreen
+    ) {
+        return ButtonOption.createBuilder()
+                .name(Component.literal(name))
+                .text(Component.literal(controllerSession.buttonBindingLabel(target)))
+                .description(description(description))
+                .action((yaclScreen, option) -> {
+                    controllerSession.startButtonCapture(target);
+                    refreshScreen.run();
+                })
+                .build();
+    }
+
+    private static ButtonOption axisCaptureOption(
+            final String name,
+            final String description,
+            final ControllerBindingSession.CaptureTarget target,
+            final ControllerBindingSession controllerSession,
+            final Runnable refreshScreen
+    ) {
+        return ButtonOption.createBuilder()
+                .name(Component.literal(name))
+                .text(Component.literal(controllerSession.axisBindingLabel(target)))
+                .description(description(description))
+                .action((yaclScreen, option) -> {
+                    controllerSession.startAxisCapture(target);
+                    refreshScreen.run();
+                })
                 .build();
     }
 
@@ -193,35 +276,8 @@ public final class DroneConfigScreens {
     }
 
     private static void save(final DroneConfig config) {
-        preserveLiveControllerSettings(config, FpvFreecam.CONFIG);
         FpvFreecam.CONFIG.copyFrom(config);
         FpvFreecam.CONFIG.save();
-    }
-
-    private static void preserveLiveControllerSettings(final DroneConfig target, final DroneConfig source) {
-        target.controller.controllerGuid = source.controller.controllerGuid;
-        target.controller.controllerName = source.controller.controllerName;
-        target.controller.armButton = source.controller.armButton;
-        target.controller.disarmButton = source.controller.disarmButton;
-        target.controller.resetButton = source.controller.resetButton;
-        target.controller.axisThrottle = source.controller.axisThrottle;
-        target.controller.axisYaw = source.controller.axisYaw;
-        target.controller.axisPitch = source.controller.axisPitch;
-        target.controller.axisRoll = source.controller.axisRoll;
-        target.controller.axisThrottleMin = source.controller.axisThrottleMin;
-        target.controller.axisThrottleMax = source.controller.axisThrottleMax;
-        target.controller.axisYawMin = source.controller.axisYawMin;
-        target.controller.axisYawMax = source.controller.axisYawMax;
-        target.controller.axisPitchMin = source.controller.axisPitchMin;
-        target.controller.axisPitchMax = source.controller.axisPitchMax;
-        target.controller.axisRollMin = source.controller.axisRollMin;
-        target.controller.axisRollMax = source.controller.axisRollMax;
-        target.controller.invertThrottle = source.controller.invertThrottle;
-        target.controller.invertYaw = source.controller.invertYaw;
-        target.controller.invertPitch = source.controller.invertPitch;
-        target.controller.invertRoll = source.controller.invertRoll;
-        target.controller.deadzone = source.controller.deadzone;
-        target.controller.allowInFlightCameraAngleAdjust = source.controller.allowInFlightCameraAngleAdjust;
     }
 
     private static String formatFloat(final float value, final String suffix) {
